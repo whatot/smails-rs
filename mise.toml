@@ -2,13 +2,23 @@
 rust = "1.95.0"
 wrangler = "4.105.0"
 
-[tasks.fmt]
-description = "Check Rust formatting"
-run = "cargo fmt --all --check"
-
 [tasks.check]
-description = "Check all crates for the Cloudflare wasm target"
-run = "cargo check --workspace --target wasm32-unknown-unknown"
+description = "Check formatting, native crates, wasm-compatible crates, and clippy"
+run = '''
+cargo fmt --all --check
+cargo check --workspace
+cargo check -p smails-core -p smails-worker -p smails-frontend --target wasm32-unknown-unknown
+cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy -p smails-core -p smails-worker -p smails-frontend --target wasm32-unknown-unknown -- -D warnings
+'''
+
+[tasks.cli]
+description = "Run the smails CLI; pass args after --"
+run = "cargo run -p smails-cli --"
+
+[tasks.mcp]
+description = "Run the smails MCP stdio server"
+run = "cargo run -p smails-mcp"
 
 [tasks.dev]
 description = "Run Wrangler dev from the workspace root"

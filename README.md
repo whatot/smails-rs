@@ -19,16 +19,33 @@ generation as caller-provided test data so the platform pieces stay visible.
 Cargo.toml                 # workspace
 wrangler.toml              # Cloudflare Worker deploy/dev entrypoint
 crates/
+  core/
+    src/lib.rs             # wasm-safe shared DTOs, paths, token helpers
+  native/
+    src/lib.rs             # native-only config and HTTP API client
   worker/
     Cargo.toml
     src/lib.rs             # fetch/email/Durable Object entrypoint
+  frontend/
+    src/lib.rs             # wasm frontend helpers shared with browser code
+  cli/
+    src/main.rs            # smails CLI entrypoint
+  mcp/
+    src/lib.rs             # MCP stdio server
 ```
 
 ## Run
 
 ```bash
+mise run check
 mise run dev
+mise run cli -- --help
+mise run mcp
 ```
+
+Native-only code lives in `crates/native`, `crates/cli`, and `crates/mcp`.
+Only `core`, `worker`, and `frontend` are checked for `wasm32-unknown-unknown`
+compatibility.
 
 ## Probe
 

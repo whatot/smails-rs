@@ -1,0 +1,16 @@
+[package]
+name = "smails-mcp"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "smails_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "smails-mcp"
+path = "src/main.rs"
+
+[dependencies]
+smails-native = { path = "../native" }
+serde_json = "1"

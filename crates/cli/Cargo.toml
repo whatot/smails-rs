@@ -1,0 +1,14 @@
+[package]
+name = "smails-cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "smails"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5.60", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+smails-core = { path = "../core" }
+smails-mcp = { path = "../mcp" }
+smails-native = { path = "../native" }
