@@ -1,29 +1,17 @@
-use serde::Deserialize;
 use smails_core::{
-    CapabilityJson, CreateMailboxRequest, MailboxCreated, OkJson, PATH_DOMAINS, PATH_MAILBOX,
+    CapabilityJson, CreateMailboxRequest, MailboxCreated, PATH_DOMAINS, PATH_MAILBOX,
     PATH_MESSAGES, authorization_header, mailbox_name_from_token,
 };
 use wasm_bindgen::JsValue;
 use worker::{Env, Method, Request, RequestInit, Response, Result};
 
-use crate::{
-    mail::{deliver, raw_email},
-    support::{MAILBOX_BINDING, bearer, domains, json_error, random_hex, token},
-};
-
-#[derive(Deserialize)]
-struct TestEmail {
-    to: String,
-    from: String,
-    subject: String,
-    body: String,
-}
+use crate::support::{MAILBOX_BINDING, bearer, domains, json_error, random_hex, token};
 
 fn random_mailbox_name() -> String {
     format!("mail-{}", random_hex(4))
 }
 
-pub(crate) async fn handle_fetch(mut req: Request, env: &Env) -> Result<Response> {
+pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
     let path = req.path();
     let message_prefix = format!("{PATH_MESSAGES}/");
 
@@ -57,17 +45,6 @@ pub(crate) async fn handle_fetch(mut req: Request, env: &Env) -> Result<Response
             let namespace = env.durable_object(MAILBOX_BINDING)?;
             let stub = namespace.get_by_name(&address)?;
             stub.fetch_with_request(req).await
-        }
-        (Method::Post, "/__test/email") => {
-            let body = req.json::<TestEmail>().await?;
-            deliver(
-                env,
-                &body.to,
-                &body.from,
-                &raw_email(&body.from, &body.subject, &body.body),
-            )
-            .await?;
-            Response::from_json(&OkJson { ok: true })
         }
         _ => json_error("Not found", 404),
     }

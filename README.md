@@ -58,13 +58,10 @@ curl -X POST http://127.0.0.1:8787/api/mailbox \
   -H 'content-type: application/json' \
   -d '{"address":"probe","token":"probe.0123456789abcdef0123456789abcdef"}'
 
-curl -X POST http://127.0.0.1:8787/__test/email \
-  -H 'content-type: application/json' \
-  -d '{"to":"probe@smails.dev","from":"sender@example.com","subject":"hello","body":"one time code: 123456"}'
-
 curl http://127.0.0.1:8787/api/mailbox/messages \
   -H 'authorization: Bearer probe.0123456789abcdef0123456789abcdef'
 ```
 
-Real Cloudflare Email Routing must still be checked after deploy, because local
-HTTP probes only prove the same Rust delivery path, not SMTP ingress.
+The local probe covers the production HTTP/auth path. Real Cloudflare Email
+Routing must still be checked after deploy, because local HTTP probes do not
+prove SMTP ingress.

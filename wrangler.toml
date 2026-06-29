@@ -14,7 +14,7 @@ command = "WASM_BINDGEN_BIN=wasm-bindgen worker-build --release crates/worker"
 directory = "crates/frontend/static"
 not_found_handling = "single-page-application"
 html_handling = "drop-trailing-slash"
-run_worker_first = ["/api/*", "/health", "/__test/*"]
+run_worker_first = ["/api/*", "/health"]
 
 [vars]
 DOMAINS = "smails.dev"

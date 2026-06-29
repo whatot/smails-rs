@@ -8,13 +8,6 @@ use crate::{
     support::{MAILBOX_BINDING, MAX_RAW_SIZE},
 };
 
-pub(crate) fn raw_email(from: &str, subject: &str, body: &str) -> Vec<u8> {
-    format!(
-        "From: {from}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
-    )
-    .into_bytes()
-}
-
 pub(crate) async fn deliver(env: &Env, to: &str, from: &str, raw_bytes: &[u8]) -> Result<()> {
     let mailbox = mailbox_name_from_address(to).to_ascii_lowercase();
     let namespace = env.durable_object(MAILBOX_BINDING)?;

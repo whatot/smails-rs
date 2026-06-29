@@ -1,5 +1,7 @@
 use serde_json::{Value, json};
-use smails_native::{CreateResult, api_from_config, create_mailbox, load_config};
+use smails_native::{
+    CreateResult, api_from_config, create_mailbox, load_config, resolve_message_id,
+};
 use std::io::{self, BufRead, BufReader, Write};
 
 pub fn run_stdio() -> Result<(), String> {
@@ -134,7 +136,9 @@ fn call_tool(params: Value) -> Result<Value, String> {
                 .get("id")
                 .and_then(Value::as_str)
                 .ok_or_else(|| "read_message requires id".to_owned())?;
-            let message = api_from_config()?.get_message(id)?;
+            let api = api_from_config()?;
+            let id = resolve_message_id(&api, id)?;
+            let message = api.get_message(&id)?;
             content(format!(
                 "From: {} <{}>\nSubject: {}\nDate: {}\n---\n{}",
                 message.from_name,
@@ -152,7 +156,9 @@ fn call_tool(params: Value) -> Result<Value, String> {
                 .get("id")
                 .and_then(Value::as_str)
                 .ok_or_else(|| "delete_message requires id".to_owned())?;
-            api_from_config()?.delete_message(id)?;
+            let api = api_from_config()?;
+            let id = resolve_message_id(&api, id)?;
+            api.delete_message(&id)?;
             content(format!("Message {id} deleted."))
         }
         "get_address" => match load_config()? {

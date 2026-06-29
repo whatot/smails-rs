@@ -4,7 +4,11 @@ use smails_core::{
     MessageSummary, OkJson, PATH_DOMAINS, PATH_MAILBOX, PATH_MESSAGES, authorization_header,
     message_path,
 };
-use std::{env, fs, path::PathBuf, time::Duration};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 pub type Result<T> = std::result::Result<T, String>;
 
@@ -165,9 +169,40 @@ pub fn load_config() -> Result<Option<Config>> {
 
 pub fn save_config(config: &Config) -> Result<()> {
     let path = config_path()?;
+    save_config_to_path(&path, config)
+}
+
+fn save_config_to_path(path: &Path, config: &Config) -> Result<()> {
     let data = serde_json::to_string_pretty(config).map_err(|err| err.to_string())?;
-    fs::write(&path, format!("{data}\n"))
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("Cannot create {}: {err}", parent.display()))?;
+    }
+    write_private_file(path, format!("{data}\n").as_bytes())
         .map_err(|err| format!("Cannot write {}: {err}", path.display()))
+}
+
+#[cfg(unix)]
+fn write_private_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(data)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn write_private_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    fs::write(path, data)
 }
 
 pub fn require_config() -> Result<Config> {
@@ -224,4 +259,41 @@ fn is_full_id(value: &str) -> bool {
             .iter()
             .zip(lens)
             .all(|(part, len)| part.len() == len && part.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn saves_config_privately() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = env::temp_dir().join(format!(
+            "smails-native-test-{}-{unique}",
+            std::process::id()
+        ));
+        let path = dir.join("config.json");
+        let config = Config {
+            address: "demo@smails.dev".to_owned(),
+            token: "demo.0123456789abcdef0123456789abcdef".to_owned(),
+        };
+
+        save_config_to_path(&path, &config).unwrap();
+        let saved = fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("demo@smails.dev"));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&dir);
+    }
 }

@@ -25,6 +25,7 @@ run = '''
 cargo fmt --all --check
 cargo check --workspace
 cargo check -p smails-core -p smails-worker -p smails-frontend --target wasm32-unknown-unknown
+cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy -p smails-core -p smails-worker -p smails-frontend --target wasm32-unknown-unknown -- -D warnings
 '''
@@ -48,10 +49,10 @@ run = "wrangler deploy"
 [tasks.probe]
 description = "Probe the local dev Worker on 127.0.0.1:8787"
 run = '''
+set -eu
 address="probe-$(date +%s)"
 token="$address.0123456789abcdef0123456789abcdef"
-curl --noproxy '*' -sS http://127.0.0.1:8787/health
-curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/api/mailbox -H 'content-type: application/json' -d "{\"address\":\"$address\",\"token\":\"$token\"}"
-curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/__test/email -H 'content-type: application/json' -d "{\"to\":\"$address@smails.dev\",\"from\":\"sender@example.com\",\"subject\":\"hello\",\"body\":\"one time code: 123456\"}"
-curl --noproxy '*' -sS http://127.0.0.1:8787/api/mailbox/messages -H "authorization: Bearer $token"
+curl --noproxy '*' --fail-with-body -sS http://127.0.0.1:8787/health
+curl --noproxy '*' --fail-with-body -sS -X POST http://127.0.0.1:8787/api/mailbox -H 'content-type: application/json' -d "{\"address\":\"$address\",\"token\":\"$token\"}"
+curl --noproxy '*' --fail-with-body -sS http://127.0.0.1:8787/api/mailbox/messages -H "authorization: Bearer $token"
 '''
