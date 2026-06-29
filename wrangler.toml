@@ -8,7 +8,7 @@ routes = [
 ]
 
 [build]
-command = "cargo install -q \"worker-build@^0.8\" && worker-build --release crates/worker"
+command = 'command -v wasm-bindgen >/dev/null && WASM_BINDGEN_BIN="$(command -v wasm-bindgen)" worker-build --release crates/worker'
 
 [assets]
 directory = "crates/frontend/static"

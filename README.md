@@ -39,7 +39,9 @@ crates/
 ## Run
 
 ```bash
+mise run setup
 mise run check
+mise run build
 mise run dev
 mise run cli -- --help
 mise run mcp
@@ -54,14 +56,14 @@ compatibility.
 ```bash
 curl -X POST http://127.0.0.1:8787/api/mailbox \
   -H 'content-type: application/json' \
-  -d '{"address":"demo","token":"demo.0123456789abcdef0123456789abcdef"}'
+  -d '{"address":"probe","token":"probe.0123456789abcdef0123456789abcdef"}'
 
 curl -X POST http://127.0.0.1:8787/__test/email \
   -H 'content-type: application/json' \
-  -d '{"to":"demo@smails.dev","from":"sender@example.com","subject":"hello","body":"one time code: 123456"}'
+  -d '{"to":"probe@smails.dev","from":"sender@example.com","subject":"hello","body":"one time code: 123456"}'
 
 curl http://127.0.0.1:8787/api/mailbox/messages \
-  -H 'authorization: Bearer demo.0123456789abcdef0123456789abcdef'
+  -H 'authorization: Bearer probe.0123456789abcdef0123456789abcdef'
 ```
 
 Real Cloudflare Email Routing must still be checked after deploy, because local

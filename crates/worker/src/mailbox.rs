@@ -52,10 +52,17 @@ impl Mailbox {
             None,
         )?;
         // ponytail: local spike migration only; replace with a real DO data migration before prod reuse.
-        let _ = self.state.storage().sql().exec(
+        for statement in [
+            "ALTER TABLE messages ADD COLUMN from_addr TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE messages ADD COLUMN from_name TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE messages ADD COLUMN subject TEXT NOT NULL DEFAULT '(no subject)'",
+            "ALTER TABLE messages ADD COLUMN preview TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE messages ADD COLUMN raw TEXT NOT NULL DEFAULT ''",
-            None,
-        );
+            "ALTER TABLE messages ADD COLUMN received_at INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE messages ADD COLUMN read INTEGER NOT NULL DEFAULT 0",
+        ] {
+            let _ = self.state.storage().sql().exec(statement, None);
+        }
         Ok(())
     }
 
@@ -221,19 +228,35 @@ impl Mailbox {
 
         let received_at = worker::Date::now().as_millis() as i64;
         let id = format!("msg-{}", random_hex(16));
-        self.state.storage().sql().exec(
+        let inserted = self.state.storage().sql().exec(
             "INSERT INTO messages (id, from_addr, from_name, subject, preview, raw, received_at)
              VALUES (?, ?, ?, ?, ?, ?, ?)",
             vec![
                 id.clone().into(),
-                body.from_addr.into(),
-                body.from_name.into(),
-                body.subject.into(),
-                body.preview.into(),
-                body.raw.into(),
+                body.from_addr.clone().into(),
+                body.from_name.clone().into(),
+                body.subject.clone().into(),
+                body.preview.clone().into(),
+                body.raw.clone().into(),
                 received_at.into(),
             ],
-        )?;
+        );
+        if inserted.is_err() {
+            self.state.storage().sql().exec(
+                "INSERT INTO messages (id, from_addr, from_name, subject, preview, raw, body, received_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                vec![
+                    id.clone().into(),
+                    body.from_addr.into(),
+                    body.from_name.into(),
+                    body.subject.into(),
+                    body.preview.into(),
+                    body.raw.into(),
+                    "".into(),
+                    received_at.into(),
+                ],
+            )?;
+        }
 
         let event = serde_json::json!({ "type": "new_message", "id": id }).to_string();
         for ws in self.state.get_websockets() {

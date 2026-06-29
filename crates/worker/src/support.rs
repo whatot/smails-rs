@@ -51,9 +51,7 @@ pub(crate) fn json_error(message: &str, status: u16) -> Result<Response> {
 
 pub(crate) fn add_version_header(response: &mut Response, env: &Env) -> Result<()> {
     if let Ok(version) = env.object_var::<VersionMetadata>("CF_VERSION") {
-        response
-            .headers_mut()
-            .set("X-Smails-Version", &version.id)?;
+        let _ = response.headers_mut().set("X-Smails-Version", &version.id);
     }
     Ok(())
 }

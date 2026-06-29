@@ -1,6 +1,17 @@
 [tools]
 wrangler = "4.105.0"
 
+[tasks.setup]
+description = "Install Worker build tools used by Wrangler"
+run = '''
+cargo install --locked worker-build --version 0.8.5
+cargo install --locked wasm-bindgen-cli --version 0.2.126
+'''
+
+[tasks.build]
+description = "Build the Worker bundle"
+run = 'command -v wasm-bindgen >/dev/null && WASM_BINDGEN_BIN="$(command -v wasm-bindgen)" worker-build --release crates/worker'
+
 [tasks.check]
 description = "Check formatting, native crates, wasm-compatible crates, and clippy"
 run = '''
@@ -30,8 +41,10 @@ run = "wrangler deploy"
 [tasks.probe]
 description = "Probe the local dev Worker on 127.0.0.1:8787"
 run = '''
+address="probe-$(date +%s)"
+token="$address.0123456789abcdef0123456789abcdef"
 curl --noproxy '*' -sS http://127.0.0.1:8787/health
-curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/api/mailbox -H 'content-type: application/json' -d '{"address":"demo","token":"demo.0123456789abcdef0123456789abcdef"}'
-curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/__test/email -H 'content-type: application/json' -d '{"to":"demo@smails.dev","from":"sender@example.com","subject":"hello","body":"one time code: 123456"}'
-curl --noproxy '*' -sS http://127.0.0.1:8787/api/mailbox/messages -H 'authorization: Bearer demo.0123456789abcdef0123456789abcdef'
+curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/api/mailbox -H 'content-type: application/json' -d "{\"address\":\"$address\",\"token\":\"$token\"}"
+curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/__test/email -H 'content-type: application/json' -d "{\"to\":\"$address@smails.dev\",\"from\":\"sender@example.com\",\"subject\":\"hello\",\"body\":\"one time code: 123456\"}"
+curl --noproxy '*' -sS http://127.0.0.1:8787/api/mailbox/messages -H "authorization: Bearer $token"
 '''
