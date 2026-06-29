@@ -49,13 +49,17 @@ impl Mailbox {
 
 impl DurableObject for Mailbox {
     fn new(state: State, _env: Env) -> Self {
-        let mailbox = Self { state };
-        let sql = mailbox.state.storage().sql();
-        init_schema(&sql).expect("migrate schema");
-        mailbox
+        Self {
+            state,
+            schema_ready: std::cell::Cell::new(false),
+        }
     }
 
     async fn fetch(&self, req: Request) -> Result<Response> {
+        if let Some(response) = self.ensure_schema()? {
+            return Ok(response);
+        }
+
         let path = req.path();
         let message_prefix = "/messages/";
 
@@ -115,6 +119,18 @@ impl DurableObject for Mailbox {
 }
 
 impl Mailbox {
+    fn ensure_schema(&self) -> Result<Option<Response>> {
+        if self.schema_ready.get() {
+            return Ok(None);
+        }
+        let sql = self.state.storage().sql();
+        if init_schema(&sql).is_err() {
+            return json_error("Schema migration failed", 500).map(Some);
+        }
+        self.schema_ready.set(true);
+        Ok(None)
+    }
+
     async fn create(&self, mut req: Request) -> Result<Response> {
         let new_token = req.text().await?;
         let existing = self.state.storage().get::<String>("token").await?;

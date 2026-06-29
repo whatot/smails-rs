@@ -60,10 +60,10 @@ async fn create_mailbox(mut req: Request, env: &Env) -> Result<Response> {
         Err(response) => return Ok(response),
     };
     let domains = domains(env);
-    let domain = body
-        .domain
-        .filter(|domain| domains.contains(domain))
-        .unwrap_or_else(|| domains[0].clone());
+    let domain = match mailbox_domain(body.domain, &domains) {
+        Ok(domain) => domain,
+        Err(()) => return json_error("invalid domain", 400),
+    };
     let address = body.address.unwrap_or_else(random_mailbox_name);
     if !is_mailbox_name(&address) {
         return json_error("invalid mailbox address", 400);
@@ -119,6 +119,17 @@ fn attachment_do_path(path: &str, message_prefix: &str) -> Option<String> {
         .then(|| format!("messages/{id}/attachments/{index}"))
 }
 
+fn mailbox_domain(
+    requested: Option<String>,
+    domains: &[String],
+) -> std::result::Result<String, ()> {
+    match requested {
+        Some(domain) if domains.contains(&domain) => Ok(domain),
+        Some(_) => Err(()),
+        None => Ok(domains[0].clone()),
+    }
+}
+
 async fn forward_authed(
     req: Request,
     env: &Env,
@@ -139,4 +150,24 @@ async fn forward_authed(
         .headers_mut()?
         .set("authorization", &authorization_header(&token))?;
     stub.fetch_with_request(forwarded).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unsupported_requested_domain() {
+        let domains = vec!["example.com".to_owned()];
+
+        assert_eq!(mailbox_domain(None, &domains).as_deref(), Ok("example.com"));
+        assert_eq!(
+            mailbox_domain(Some("example.com".to_owned()), &domains).as_deref(),
+            Ok("example.com")
+        );
+        assert_eq!(
+            mailbox_domain(Some("other.com".to_owned()), &domains),
+            Err(())
+        );
+    }
 }

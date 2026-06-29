@@ -5,6 +5,8 @@ mod mime;
 mod schema;
 mod support;
 
+use std::cell::Cell;
+
 use wasm_bindgen::prelude::*;
 use worker::{
     Context, Env, ForwardableEmailMessage, Request, Response, Result, State, durable_object, event,
@@ -13,6 +15,7 @@ use worker::{
 #[durable_object]
 pub struct Mailbox {
     pub(crate) state: State,
+    pub(crate) schema_ready: Cell<bool>,
 }
 
 #[event(fetch, respond_with_errors)]
