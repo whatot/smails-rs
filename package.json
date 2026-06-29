@@ -1,0 +1,13 @@
+{
+  "name": "smails-rs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cargo install -q worker-build --version 0.8.5 && cargo install -q wasm-bindgen-cli --version 0.2.126 --locked && WASM_BINDGEN_BIN=$HOME/.cargo/bin/wasm-bindgen worker-build --dev",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.104.0"
+  }
+}
