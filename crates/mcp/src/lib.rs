@@ -1,4 +1,5 @@
 use serde_json::{Value, json};
+use smails_core::{Attachment, format_bytes};
 use smails_native::{
     CreateResult, api_from_config, create_mailbox, load_config, resolve_message_id,
 };
@@ -139,16 +140,19 @@ fn call_tool(params: Value) -> Result<Value, String> {
             let api = api_from_config()?;
             let id = resolve_message_id(&api, id)?;
             let message = api.get_message(&id)?;
+            let attachments = attachment_lines(&message.attachments);
             content(format!(
-                "From: {} <{}>\nSubject: {}\nDate: {}\n---\n{}",
+                "From: {} <{}>\nSubject: {}\nDate: {}\n---\n{}{}",
                 message.from_name,
                 message.from_addr,
                 message.subject,
                 message.received_at,
                 message
                     .text
-                    .or(message.html)
-                    .unwrap_or_else(|| "(empty)".to_owned())
+                    .as_deref()
+                    .or(message.html.as_deref())
+                    .unwrap_or("(empty)"),
+                attachments
             ))
         }
         "delete_message" => {
@@ -171,6 +175,26 @@ fn call_tool(params: Value) -> Result<Value, String> {
 
 fn content(text: impl Into<String>) -> Result<Value, String> {
     Ok(json!({ "content": [{ "type": "text", "text": text.into() }] }))
+}
+
+fn attachment_lines(attachments: &[Attachment]) -> String {
+    if attachments.is_empty() {
+        return String::new();
+    }
+    let lines = attachments
+        .iter()
+        .map(|attachment| {
+            format!(
+                "[{}] {} | {} | {}",
+                attachment.index,
+                attachment.filename.as_deref().unwrap_or("attachment"),
+                attachment.content_type,
+                format_bytes(attachment.size)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("\n---\nAttachments:\n{lines}")
 }
 
 fn read_message(reader: &mut impl BufRead) -> Result<Option<Value>, String> {

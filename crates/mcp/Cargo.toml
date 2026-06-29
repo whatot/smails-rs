@@ -12,5 +12,6 @@ name = "smails-mcp"
 path = "src/main.rs"
 
 [dependencies]
+smails-core = { path = "../core" }
 smails-native = { path = "../native" }
 serde_json = "1"

@@ -1,7 +1,6 @@
 # smails-rs
 
-Rust spike for checking whether the smails Cloudflare shape can be implemented
-with workers-rs:
+Rust implementation of the smails Cloudflare shape with workers-rs:
 
 - Worker `fetch`
 - Durable Object binding
@@ -10,9 +9,8 @@ with workers-rs:
 - hibernatable WebSocket callbacks
 - Rust-exported `email` handler
 
-This is intentionally not the product rewrite yet. It keeps a tiny static
-asset shell and caller-provided test mailbox data so the platform pieces stay
-visible.
+The repo keeps the Worker, Yew frontend, CLI, and MCP server in one Rust
+workspace so the Cloudflare platform path stays easy to validate and reuse.
 
 ## Layout
 
@@ -28,8 +26,8 @@ crates/
     Cargo.toml
     src/lib.rs             # fetch/email/Durable Object entrypoint
   frontend/
-    src/lib.rs             # wasm frontend helpers shared with browser code
-    static/index.html      # minimal Workers Assets shell
+    src/                  # Yew CSR app, API client, storage, WebSocket, views
+    static/index.html      # Workers Assets shell loading the Rust WASM bundle
   cli/
     src/main.rs            # smails CLI entrypoint
   mcp/
@@ -45,6 +43,26 @@ mise run build
 mise run dev
 mise run cli -- --help
 mise run mcp
+```
+
+## Configuration
+
+Worker mailbox domains are injected through the `DOMAINS` Worker variable:
+
+```toml
+[vars]
+DOMAINS = "example.com,alt.example.com"
+```
+
+The first domain is used when a create request does not specify one. The
+Cloudflare `routes` block in `wrangler.toml` is still deployment config, not a
+runtime Worker env var; change it per environment or omit it when deploying to
+workers.dev.
+
+Native tools default to `https://smails.dev`, but can target any deployment:
+
+```bash
+SMAILS_API_URL=https://mail.example.com smails create
 ```
 
 Native-only code lives in `crates/native`, `crates/cli`, and `crates/mcp`.

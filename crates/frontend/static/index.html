@@ -3,9 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>smails</title>
+    <meta name="description" content="Disposable email for humans and agents with REST API, CLI, and MCP.">
+    <title>smails - disposable email for humans and agents</title>
+    <link rel="stylesheet" href="/style.css">
   </head>
   <body>
-    <main id="app">smails-rs</main>
+    <div id="app"></div>
+    <script type="module">
+      import init from "/pkg/smails_frontend.js";
+      init();
+    </script>
   </body>
 </html>

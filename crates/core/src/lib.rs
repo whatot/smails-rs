@@ -46,7 +46,18 @@ pub struct MessageDetail {
     pub read: i64,
     pub html: Option<String>,
     pub text: Option<String>,
-    pub attachments: Vec<serde_json::Value>,
+    pub attachments: Vec<Attachment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Attachment {
+    #[serde(default)]
+    pub index: usize,
+    pub filename: Option<String>,
+    pub content_type: String,
+    pub content_id: Option<String>,
+    pub disposition: Option<String>,
+    pub size: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -124,8 +135,41 @@ pub fn message_path(id: &str) -> String {
     format!("{PATH_MESSAGES}/{id}")
 }
 
+pub fn attachment_path(id: &str, index: usize) -> String {
+    format!("{}/attachments/{index}", message_path(id))
+}
+
 pub fn short_id(id: &str) -> &str {
     id.get(..8).unwrap_or(id)
+}
+
+pub fn format_bytes(size: usize) -> String {
+    if size < 1024 {
+        format!("{size} B")
+    } else if size < 1024 * 1024 {
+        format!("{:.1} KB", size as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", size as f64 / 1024.0 / 1024.0)
+    }
+}
+
+pub fn attachment_filename(attachment: &Attachment) -> String {
+    attachment
+        .filename
+        .as_deref()
+        .map(safe_filename)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| format!("attachment-{}", attachment.index))
+}
+
+pub fn safe_filename(value: &str) -> String {
+    value
+        .chars()
+        .map(|char| match char {
+            '"' | '\\' | '/' | '\0' | '\r' | '\n' => '_',
+            char => char,
+        })
+        .collect()
 }
 
 pub fn preview_text(text: &str) -> String {

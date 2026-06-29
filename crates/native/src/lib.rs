@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use smails_core::{
     CONFIG_FILE, CreateMailboxRequest, DEFAULT_BASE_URL, MailboxCreated, MessageDetail,
-    MessageSummary, OkJson, PATH_DOMAINS, PATH_MAILBOX, PATH_MESSAGES, authorization_header,
-    message_path,
+    MessageSummary, OkJson, PATH_DOMAINS, PATH_MAILBOX, PATH_MESSAGES, attachment_path,
+    authorization_header, message_path,
 };
 use std::{
     env, fs,
@@ -81,6 +81,24 @@ impl ApiClient {
         Ok(())
     }
 
+    pub fn download_attachment(&self, id: &str, index: usize) -> Result<Vec<u8>> {
+        let url = format!("{}{}", self.base_url, attachment_path(id, index));
+        let mut request = self.agent.get(&url);
+        if let Some(token) = &self.token {
+            request = request.header("Authorization", &authorization_header(token));
+        }
+        let mut response = request
+            .call()
+            .map_err(|err| format!("Network error: {err}"))?;
+        if !response.status().is_success() {
+            return Err(error_message(&mut response));
+        }
+        response
+            .body_mut()
+            .read_to_vec()
+            .map_err(|err| format!("Cannot read attachment: {err}"))
+    }
+
     fn request_json<T: DeserializeOwned>(
         &self,
         method: Method,
@@ -116,25 +134,28 @@ impl ApiClient {
         };
         let mut response = response.map_err(|err| format!("Network error: {err}"))?;
         if !response.status().is_success() {
-            let status = response.status().as_u16();
-            let text = response.body_mut().read_to_string().unwrap_or_default();
-            let msg = serde_json::from_str::<serde_json::Value>(&text)
-                .ok()
-                .and_then(|value| {
-                    value
-                        .get("error")
-                        .and_then(|error| error.as_str())
-                        .map(str::to_owned)
-                })
-                .filter(|error| !error.is_empty())
-                .unwrap_or_else(|| format!("HTTP {status}"));
-            return Err(msg);
+            return Err(error_message(&mut response));
         }
         response
             .body_mut()
             .read_json()
             .map_err(|err| format!("Invalid JSON response: {err}"))
     }
+}
+
+fn error_message(response: &mut ureq::http::Response<ureq::Body>) -> String {
+    let status = response.status().as_u16();
+    let text = response.body_mut().read_to_string().unwrap_or_default();
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(|error| error.as_str())
+                .map(str::to_owned)
+        })
+        .filter(|error| !error.is_empty())
+        .unwrap_or_else(|| format!("HTTP {status}"))
 }
 
 #[derive(Debug, Clone, Copy)]

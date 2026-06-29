@@ -2,6 +2,7 @@ mod http;
 mod mail;
 mod mailbox;
 mod mime;
+mod schema;
 mod support;
 
 use wasm_bindgen::prelude::*;

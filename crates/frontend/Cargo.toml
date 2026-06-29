@@ -8,4 +8,25 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 smails-core = { path = "../core" }
+js-sys = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+serde_json = "1"
 wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Clipboard",
+  "CloseEvent",
+  "Event",
+  "Headers",
+  "Location",
+  "MessageEvent",
+  "Navigator",
+  "Request",
+  "RequestInit",
+  "Response",
+  "Storage",
+  "WebSocket",
+  "Window",
+] }
+yew = { version = "0.23.0", features = ["csr"] }

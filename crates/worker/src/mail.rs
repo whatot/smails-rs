@@ -12,8 +12,7 @@ pub(crate) async fn deliver(env: &Env, to: &str, from: &str, raw_bytes: &[u8]) -
     let mailbox = mailbox_name_from_address(to).to_ascii_lowercase();
     let namespace = env.durable_object(MAILBOX_BINDING)?;
     let stub = namespace.get_by_name(&mailbox)?;
-    let raw_text = String::from_utf8_lossy(raw_bytes);
-    let display = display_fields(&raw_text, from);
+    let display = display_fields(raw_bytes, from);
 
     let mut init = RequestInit::new();
     init.with_method(Method::Post);

@@ -1,6 +1,6 @@
 use smails_core::{
     CapabilityJson, CreateMailboxRequest, MailboxCreated, PATH_DOMAINS, PATH_MAILBOX,
-    PATH_MESSAGES, authorization_header, mailbox_name_from_token,
+    PATH_MESSAGES, authorization_header, is_mailbox_name, mailbox_name_from_token,
 };
 use wasm_bindgen::JsValue;
 use worker::{Env, Method, Request, RequestInit, Response, Result};
@@ -28,8 +28,12 @@ pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
         (Method::Post, PATH_MAILBOX) => create_mailbox(req, env).await,
         (Method::Get, PATH_MESSAGES) => forward_authed(req, env, "messages", Method::Get).await,
         (Method::Get, path) if path.starts_with(&message_prefix) => {
-            let id = &path[message_prefix.len()..];
-            forward_authed(req, env, &format!("messages/{id}"), Method::Get).await
+            if let Some(do_path) = attachment_do_path(path, &message_prefix) {
+                forward_authed(req, env, &do_path, Method::Get).await
+            } else {
+                let id = &path[message_prefix.len()..];
+                forward_authed(req, env, &format!("messages/{id}"), Method::Get).await
+            }
         }
         (Method::Delete, path) if path.starts_with(&message_prefix) => {
             let id = &path[message_prefix.len()..];
@@ -51,20 +55,19 @@ pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
 }
 
 async fn create_mailbox(mut req: Request, env: &Env) -> Result<Response> {
-    let body = req
-        .json::<CreateMailboxRequest>()
-        .await
-        .unwrap_or(CreateMailboxRequest {
-            domain: None,
-            address: None,
-            token: None,
-        });
+    let body = match create_mailbox_body(&mut req).await? {
+        Ok(body) => body,
+        Err(response) => return Ok(response),
+    };
     let domains = domains(env);
     let domain = body
         .domain
         .filter(|domain| domains.contains(domain))
         .unwrap_or_else(|| domains[0].clone());
     let address = body.address.unwrap_or_else(random_mailbox_name);
+    if !is_mailbox_name(&address) {
+        return json_error("invalid mailbox address", 400);
+    }
     let token = body
         .token
         .unwrap_or_else(|| format!("{address}.{}", random_hex(16)));
@@ -90,6 +93,30 @@ async fn create_mailbox(mut req: Request, env: &Env) -> Result<Response> {
         token,
     })
     .map(|response| response.with_status(201))
+}
+
+async fn create_mailbox_body(
+    req: &mut Request,
+) -> Result<std::result::Result<CreateMailboxRequest, Response>> {
+    let text = req.text().await?;
+    if text.trim().is_empty() {
+        return Ok(Ok(CreateMailboxRequest {
+            domain: None,
+            address: None,
+            token: None,
+        }));
+    }
+    match serde_json::from_str(&text) {
+        Ok(body) => Ok(Ok(body)),
+        Err(_) => Ok(Err(json_error("Invalid JSON", 400)?)),
+    }
+}
+
+fn attachment_do_path(path: &str, message_prefix: &str) -> Option<String> {
+    let rest = path.strip_prefix(message_prefix)?;
+    let (id, index) = rest.split_once("/attachments/")?;
+    (!id.is_empty() && index.parse::<usize>().is_ok())
+        .then(|| format!("messages/{id}/attachments/{index}"))
 }
 
 async fn forward_authed(

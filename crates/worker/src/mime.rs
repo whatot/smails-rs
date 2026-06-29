@@ -1,5 +1,5 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use smails_core::preview_text;
+use mail_parser::{Message, MessageParser, MessagePart, MimeHeaders};
+use smails_core::{Attachment, preview_text};
 
 pub(crate) struct DisplayFields {
     pub(crate) from_name: String,
@@ -8,191 +8,64 @@ pub(crate) struct DisplayFields {
 }
 
 #[derive(Default)]
-pub(crate) struct BodyParts {
+pub(crate) struct ParsedMail {
     pub(crate) html: Option<String>,
     pub(crate) text: Option<String>,
+    pub(crate) attachments: Vec<Attachment>,
 }
 
-fn split_headers_body(raw: &str) -> (&str, &str) {
-    if let Some(index) = raw.find("\r\n\r\n") {
-        return (&raw[..index], &raw[index + 4..]);
-    }
-    if let Some(index) = raw.find("\n\n") {
-        return (&raw[..index], &raw[index + 2..]);
-    }
-    ("", raw)
+pub(crate) struct AttachmentBody {
+    pub(crate) metadata: Attachment,
+    pub(crate) content: Vec<u8>,
 }
 
-fn header_value(headers: &str, name: &str) -> Option<String> {
-    let mut found = false;
-    let mut value = String::new();
-
-    for line in headers.lines() {
-        if line.starts_with(' ') || line.starts_with('\t') {
-            if found {
-                value.push(' ');
-                value.push_str(line.trim());
-            }
-            continue;
-        }
-
-        if found {
-            break;
-        }
-
-        let Some((key, line_value)) = line.split_once(':') else {
-            continue;
-        };
-        if key.eq_ignore_ascii_case(name) {
-            found = true;
-            value = line_value.trim().to_owned();
-        }
-    }
-
-    found.then_some(value)
-}
-
-fn boundary_from_content_type(content_type: &str) -> Option<String> {
-    content_type.split(';').skip(1).find_map(|part| {
-        let (key, value) = part.trim().split_once('=')?;
-        key.trim()
-            .eq_ignore_ascii_case("boundary")
-            .then(|| value.trim().trim_matches('"').to_owned())
-    })
-}
-
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
-fn decode_quoted_printable(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-
-    while index < bytes.len() {
-        if bytes[index] == b'=' {
-            if bytes.get(index + 1) == Some(&b'\r') && bytes.get(index + 2) == Some(&b'\n') {
-                index += 3;
-                continue;
-            }
-            if bytes.get(index + 1) == Some(&b'\n') {
-                index += 2;
-                continue;
-            }
-            if let (Some(left), Some(right)) = (
-                bytes.get(index + 1).and_then(|byte| hex_value(*byte)),
-                bytes.get(index + 2).and_then(|byte| hex_value(*byte)),
-            ) {
-                out.push((left << 4) | right);
-                index += 3;
-                continue;
-            }
-        }
-
-        out.push(bytes[index]);
-        index += 1;
-    }
-
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn decode_transfer(headers: &str, body: &str) -> String {
-    match header_value(headers, "content-transfer-encoding")
+pub(crate) fn parse_mail(raw: &[u8]) -> ParsedMail {
+    MessageParser::default()
+        .parse(raw)
+        .map(|message| ParsedMail {
+            html: first_body(message.html_bodies()),
+            text: first_body(message.text_bodies()),
+            attachments: attachments(&message),
+        })
         .unwrap_or_default()
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "base64" => {
-            let compact: String = body.chars().filter(|char| !char.is_whitespace()).collect();
-            BASE64
-                .decode(compact)
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .unwrap_or_default()
-        }
-        "quoted-printable" => decode_quoted_printable(body),
-        _ => body.to_owned(),
-    }
 }
 
-pub(crate) fn parse_body_parts(raw: &str) -> BodyParts {
-    parse_body_parts_at_depth(raw, 0)
+pub(crate) fn parse_attachment(raw: &[u8], index: usize) -> Option<AttachmentBody> {
+    MessageParser::default()
+        .parse(raw)?
+        .attachments()
+        .enumerate()
+        .find(|(part_index, _)| *part_index == index)
+        .map(|(part_index, part)| AttachmentBody {
+            metadata: attachment_metadata(part_index, part),
+            content: part.contents().to_vec(),
+        })
 }
 
-fn parse_body_parts_at_depth(raw: &str, depth: usize) -> BodyParts {
-    let (headers, body) = split_headers_body(raw);
-    let content_type = header_value(headers, "content-type").unwrap_or_default();
-    let lower_content_type = content_type.to_ascii_lowercase();
-
-    if depth < 4
-        && lower_content_type.starts_with("multipart/")
-        && let Some(boundary) = boundary_from_content_type(&content_type)
-    {
-        let marker = format!("--{boundary}");
-        let mut parts = BodyParts::default();
-
-        for chunk in body.split(&marker).skip(1) {
-            let chunk = chunk.trim_start_matches("\r\n").trim_start_matches('\n');
-            if chunk.starts_with("--") {
-                break;
-            }
-
-            let child = parse_body_parts_at_depth(chunk.trim(), depth + 1);
-            if parts.text.is_none() {
-                parts.text = child.text;
-            }
-            if parts.html.is_none() {
-                parts.html = child.html;
-            }
-            if parts.text.is_some() && parts.html.is_some() {
-                break;
-            }
-        }
-
-        return parts;
-    }
-
-    let body = decode_transfer(headers, body).trim().to_owned();
-    if body.is_empty() {
-        return BodyParts::default();
-    }
-
-    if lower_content_type.contains("text/html") {
-        BodyParts {
-            html: Some(body),
-            text: None,
-        }
-    } else {
-        BodyParts {
-            html: None,
-            text: Some(body),
-        }
-    }
-}
-
-fn name_from_from_header(header: &str) -> Option<String> {
-    let name = header
-        .split('<')
-        .next()
-        .unwrap_or(header)
-        .trim()
-        .trim_matches('"');
-    (!name.is_empty()).then(|| name.to_owned())
-}
-
-pub(crate) fn display_fields(raw: &str, fallback_from: &str) -> DisplayFields {
-    let (headers, _) = split_headers_body(raw);
-    let from_header = header_value(headers, "from").unwrap_or_else(|| fallback_from.to_owned());
-    let from_name = name_from_from_header(&from_header).unwrap_or_else(|| fallback_from.to_owned());
-    let subject = header_value(headers, "subject")
+pub(crate) fn display_fields(raw: &[u8], fallback_from: &str) -> DisplayFields {
+    let message = MessageParser::default().parse(raw);
+    let from_name = message
+        .as_ref()
+        .and_then(|message| message.from())
+        .and_then(|from| from.first())
+        .and_then(|from| from.name.as_deref())
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| fallback_from.to_owned());
+    let subject = message
+        .as_ref()
+        .and_then(|message| message.subject())
         .filter(|subject| !subject.is_empty())
-        .unwrap_or_else(|| "(no subject)".to_owned());
-    let parts = parse_body_parts(raw);
+        .unwrap_or("(no subject)")
+        .to_owned();
+    let parts = message
+        .as_ref()
+        .map(|message| ParsedMail {
+            html: first_body(message.html_bodies()),
+            text: first_body(message.text_bodies()),
+            attachments: Vec::new(),
+        })
+        .unwrap_or_default();
     let preview = parts
         .text
         .as_deref()
@@ -207,49 +80,100 @@ pub(crate) fn display_fields(raw: &str, fallback_from: &str) -> DisplayFields {
     }
 }
 
+fn first_body<'a>(parts: impl Iterator<Item = &'a MessagePart<'a>>) -> Option<String> {
+    parts
+        .filter_map(|part| part.text_contents())
+        .find(|body| !body.trim().is_empty())
+        .map(str::to_owned)
+}
+
+fn attachments(message: &Message<'_>) -> Vec<Attachment> {
+    message
+        .attachments()
+        .enumerate()
+        .map(|(index, part)| attachment_metadata(index, part))
+        .collect()
+}
+
+fn attachment_metadata(index: usize, part: &MessagePart<'_>) -> Attachment {
+    Attachment {
+        index,
+        filename: part.attachment_name().map(str::to_owned),
+        content_type: content_type(part),
+        content_id: part.content_id().map(clean_content_id),
+        disposition: part
+            .content_disposition()
+            .map(|disposition| disposition.ctype().to_ascii_lowercase()),
+        size: part.len(),
+    }
+}
+
+fn content_type(part: &MessagePart<'_>) -> String {
+    part.content_type()
+        .map(|content_type| match content_type.subtype() {
+            Some(subtype) => format!("{}/{}", content_type.ctype(), subtype),
+            None => content_type.ctype().to_owned(),
+        })
+        .unwrap_or_else(|| "application/octet-stream".to_owned())
+}
+
+fn clean_content_id(value: &str) -> String {
+    value.trim().trim_matches('<').trim_matches('>').to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn parses_simple_message_body() {
+    fn parses_simple_message_display_and_body() {
         let raw =
-            "From: Alice <a@example.com>\r\nSubject: Hi\r\nContent-Type: text/plain\r\n\r\nhello";
+            b"From: Alice <a@example.com>\r\nSubject: Hi\r\nContent-Type: text/plain\r\n\r\nhello";
         let fields = display_fields(raw, "fallback@example.com");
-        let parts = parse_body_parts(raw);
+        let parsed = parse_mail(raw);
 
         assert_eq!(fields.from_name, "Alice");
         assert_eq!(fields.subject, "Hi");
         assert_eq!(fields.preview, "hello");
-        assert_eq!(parts.text.as_deref(), Some("hello"));
+        assert_eq!(parsed.text.as_deref(), Some("hello"));
     }
 
     #[test]
-    fn parses_multipart_text_and_html() {
+    fn parses_multipart_text_html_and_attachment_metadata() {
         let raw = concat!(
-            "Content-Type: multipart/alternative; boundary=\"x\"\r\n\r\n",
-            "--x\r\nContent-Type: text/plain\r\n\r\nplain\r\n",
-            "--x\r\nContent-Type: text/html\r\n\r\n<b>html</b>\r\n",
-            "--x--\r\n"
+            "From: Alice <a@example.com>\r\n",
+            "Subject: Files\r\n",
+            "Content-Type: multipart/mixed; boundary=\"mixed\"\r\n\r\n",
+            "--mixed\r\n",
+            "Content-Type: multipart/alternative; boundary=\"alt\"\r\n\r\n",
+            "--alt\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nplain\r\n",
+            "--alt\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<b>html</b>\r\n",
+            "--alt--\r\n",
+            "--mixed\r\n",
+            "Content-Type: text/plain; name=\"code.txt\"\r\n",
+            "Content-Disposition: attachment; filename=\"code.txt\"\r\n",
+            "Content-ID: <file-1>\r\n",
+            "Content-Transfer-Encoding: base64\r\n\r\n",
+            "aGVsbG8=\r\n",
+            "--mixed--\r\n"
         );
-        let parts = parse_body_parts(raw);
+        let parsed = parse_mail(raw.as_bytes());
 
-        assert_eq!(parts.text.as_deref(), Some("plain"));
-        assert_eq!(parts.html.as_deref(), Some("<b>html</b>"));
-    }
+        assert_eq!(parsed.text.as_deref(), Some("plain"));
+        assert_eq!(parsed.html.as_deref(), Some("<b>html</b>"));
+        assert_eq!(parsed.attachments.len(), 1);
+        assert_eq!(parsed.attachments[0].index, 0);
+        assert_eq!(parsed.attachments[0].filename.as_deref(), Some("code.txt"));
+        assert_eq!(parsed.attachments[0].content_type, "text/plain");
+        assert_eq!(parsed.attachments[0].content_id.as_deref(), Some("file-1"));
+        assert_eq!(
+            parsed.attachments[0].disposition.as_deref(),
+            Some("attachment")
+        );
+        assert_eq!(parsed.attachments[0].size, 5);
 
-    #[test]
-    fn decodes_common_transfer_encodings() {
-        assert_eq!(
-            decode_transfer("Content-Transfer-Encoding: base64", "aGVsbG8="),
-            "hello"
-        );
-        assert_eq!(
-            decode_transfer(
-                "Content-Transfer-Encoding: quoted-printable",
-                "hello=0Aworld"
-            ),
-            "hello\nworld"
-        );
+        let body = parse_attachment(raw.as_bytes(), 0).unwrap();
+        assert_eq!(body.metadata.filename.as_deref(), Some("code.txt"));
+        assert_eq!(body.content, b"hello");
     }
 }

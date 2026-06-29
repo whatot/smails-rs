@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::Deserialize;
-use smails_core::{DeliverMessage, MessageDetail, MessageSummary, OkJson};
+use smails_core::{DeliverMessage, MessageDetail, MessageSummary, OkJson, attachment_filename};
 use worker::{
     DurableObject, Env, Method, Request, Response, Result, State, WebSocket,
     WebSocketIncomingMessage, WebSocketPair,
@@ -8,7 +8,8 @@ use worker::{
 
 use crate::{
     Mailbox,
-    mime::parse_body_parts,
+    mime::{parse_attachment, parse_mail},
+    schema::init_schema,
     support::{EXPIRY_MS, ONE_DAY_MS, constant_time_eq, json_error, random_hex, token},
 };
 
@@ -37,35 +38,6 @@ impl Mailbox {
         Ok(())
     }
 
-    fn init_schema(&self) -> Result<()> {
-        self.state.storage().sql().exec(
-            "CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY,
-                from_addr TEXT NOT NULL,
-                from_name TEXT NOT NULL,
-                subject TEXT NOT NULL,
-                preview TEXT NOT NULL,
-                raw TEXT NOT NULL,
-                received_at INTEGER NOT NULL,
-                read INTEGER NOT NULL DEFAULT 0
-            )",
-            None,
-        )?;
-        // ponytail: local spike migration only; replace with a real DO data migration before prod reuse.
-        for statement in [
-            "ALTER TABLE messages ADD COLUMN from_addr TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE messages ADD COLUMN from_name TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE messages ADD COLUMN subject TEXT NOT NULL DEFAULT '(no subject)'",
-            "ALTER TABLE messages ADD COLUMN preview TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE messages ADD COLUMN raw TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE messages ADD COLUMN received_at INTEGER NOT NULL DEFAULT 0",
-            "ALTER TABLE messages ADD COLUMN read INTEGER NOT NULL DEFAULT 0",
-        ] {
-            let _ = self.state.storage().sql().exec(statement, None);
-        }
-        Ok(())
-    }
-
     async fn auth(&self, req: &Request) -> Result<bool> {
         let expected = self.state.storage().get::<String>("token").await?;
         Ok(expected
@@ -78,7 +50,8 @@ impl Mailbox {
 impl DurableObject for Mailbox {
     fn new(state: State, _env: Env) -> Self {
         let mailbox = Self { state };
-        mailbox.init_schema().expect("create schema");
+        let sql = mailbox.state.storage().sql();
+        init_schema(&sql).expect("migrate schema");
         mailbox
     }
 
@@ -90,7 +63,12 @@ impl DurableObject for Mailbox {
             (Method::Post, "/create") => self.create(req).await,
             (Method::Get, "/messages") => self.list(req).await,
             (Method::Get, path) if path.starts_with(message_prefix) => {
-                self.read(req, &path[message_prefix.len()..]).await
+                let rest = &path[message_prefix.len()..];
+                if let Some((id, index)) = attachment_request(rest) {
+                    self.download_attachment(req, id, index).await
+                } else {
+                    self.read(req, rest).await
+                }
             }
             (Method::Delete, path) if path.starts_with(message_prefix) => {
                 self.delete(req, &path[message_prefix.len()..]).await
@@ -189,11 +167,8 @@ impl Mailbox {
         let Some(row) = rows.into_iter().next() else {
             return json_error("Message not found", 404);
         };
-        let raw = BASE64
-            .decode(row.raw)
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .unwrap_or_default();
-        let parts = parse_body_parts(&raw);
+        let raw = BASE64.decode(row.raw).unwrap_or_default();
+        let parts = parse_mail(&raw);
         Response::from_json(&MessageDetail {
             id: row.id,
             from_addr: row.from_addr,
@@ -203,8 +178,38 @@ impl Mailbox {
             read: row.read,
             html: parts.html,
             text: parts.text,
-            attachments: Vec::new(),
+            attachments: parts.attachments,
         })
+    }
+
+    async fn download_attachment(&self, req: Request, id: &str, index: usize) -> Result<Response> {
+        if !self.auth(&req).await? {
+            return json_error("Unauthorized", 401);
+        }
+        self.touch().await?;
+        let rows = self
+            .state
+            .storage()
+            .sql()
+            .exec("SELECT * FROM messages WHERE id = ?", vec![id.into()])?
+            .to_array::<StoredMessage>()?;
+        let Some(row) = rows.into_iter().next() else {
+            return json_error("Message not found", 404);
+        };
+        let raw = BASE64.decode(row.raw).unwrap_or_default();
+        let Some(attachment) = parse_attachment(&raw, index) else {
+            return json_error("Attachment not found", 404);
+        };
+        let filename = attachment_filename(&attachment.metadata);
+        let mut response = Response::from_bytes(attachment.content)?;
+        response
+            .headers_mut()
+            .set("content-type", &attachment.metadata.content_type)?;
+        response.headers_mut().set(
+            "content-disposition",
+            &format!("attachment; filename=\"{filename}\""),
+        )?;
+        Ok(response)
     }
 
     async fn delete(&self, req: Request, id: &str) -> Result<Response> {
@@ -228,35 +233,19 @@ impl Mailbox {
 
         let received_at = worker::Date::now().as_millis() as i64;
         let id = format!("msg-{}", random_hex(16));
-        let inserted = self.state.storage().sql().exec(
+        self.state.storage().sql().exec(
             "INSERT INTO messages (id, from_addr, from_name, subject, preview, raw, received_at)
              VALUES (?, ?, ?, ?, ?, ?, ?)",
             vec![
                 id.clone().into(),
-                body.from_addr.clone().into(),
-                body.from_name.clone().into(),
-                body.subject.clone().into(),
-                body.preview.clone().into(),
-                body.raw.clone().into(),
+                body.from_addr.into(),
+                body.from_name.into(),
+                body.subject.into(),
+                body.preview.into(),
+                body.raw.into(),
                 received_at.into(),
             ],
-        );
-        if inserted.is_err() {
-            self.state.storage().sql().exec(
-                "INSERT INTO messages (id, from_addr, from_name, subject, preview, raw, body, received_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                vec![
-                    id.clone().into(),
-                    body.from_addr.into(),
-                    body.from_name.into(),
-                    body.subject.into(),
-                    body.preview.into(),
-                    body.raw.into(),
-                    "".into(),
-                    received_at.into(),
-                ],
-            )?;
-        }
+        )?;
 
         let event = serde_json::json!({ "type": "new_message", "id": id }).to_string();
         for ws in self.state.get_websockets() {
@@ -275,4 +264,10 @@ impl Mailbox {
         self.touch().await?;
         Response::from_websocket(pair.client)
     }
+}
+
+fn attachment_request(rest: &str) -> Option<(&str, usize)> {
+    let (id, index) = rest.split_once("/attachments/")?;
+    let index = index.parse().ok()?;
+    (!id.is_empty()).then_some((id, index))
 }
