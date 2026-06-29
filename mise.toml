@@ -1,5 +1,4 @@
 [tools]
-rust = "1.95.0"
 wrangler = "4.105.0"
 
 [tasks.check]
