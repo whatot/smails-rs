@@ -1,0 +1,28 @@
+[tools]
+rust = "1.95.0"
+wrangler = "4.105.0"
+
+[tasks.fmt]
+description = "Check Rust formatting"
+run = "cargo fmt --all --check"
+
+[tasks.check]
+description = "Check all crates for the Cloudflare wasm target"
+run = "cargo check --workspace --target wasm32-unknown-unknown"
+
+[tasks.dev]
+description = "Run Wrangler dev from the workspace root"
+run = "wrangler dev --ip 127.0.0.1 --port 8787"
+
+[tasks.deploy]
+description = "Deploy the Worker with Wrangler"
+run = "wrangler deploy"
+
+[tasks.probe]
+description = "Probe the local dev Worker on 127.0.0.1:8787"
+run = '''
+curl --noproxy '*' -sS http://127.0.0.1:8787/health
+curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/api/mailbox -H 'content-type: application/json' -d '{"address":"demo","token":"demo.secret"}'
+curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/__test/email -H 'content-type: application/json' -d '{"to":"demo@smails.dev","from":"sender@example.com","subject":"hello","body":"one time code: 123456"}'
+curl --noproxy '*' -sS http://127.0.0.1:8787/api/mailbox/messages -H 'authorization: Bearer demo.secret'
+'''

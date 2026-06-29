@@ -13,20 +13,21 @@ with workers-rs:
 This is intentionally not the product rewrite yet. It keeps address/token
 generation as caller-provided test data so the platform pieces stay visible.
 
+## Layout
+
+```text
+Cargo.toml                 # workspace
+wrangler.toml              # Cloudflare Worker deploy/dev entrypoint
+crates/
+  worker/
+    Cargo.toml
+    src/lib.rs             # fetch/email/Durable Object entrypoint
+```
+
 ## Run
 
 ```bash
-pnpm install
-pnpm build
-pnpm dev
-```
-
-If `worker-build` tries to download `wasm-bindgen` slowly, install the matching
-CLI once and point the build at it:
-
-```bash
-cargo install wasm-bindgen-cli --version 0.2.126 --locked
-WASM_BINDGEN_BIN="$HOME/.cargo/bin/wasm-bindgen" worker-build --dev
+mise run dev
 ```
 
 ## Probe

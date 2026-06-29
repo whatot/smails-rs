@@ -1,4 +1,4 @@
-/build/
-/target/
-/node_modules/
+build/
+target/
+node_modules/
 /.wrangler/
