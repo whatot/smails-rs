@@ -1,16 +1,23 @@
 [tools]
 wrangler = "4.105.0"
 
+[env]
+RUSTC_WRAPPER = ""
+WRANGLER_LOG_PATH = ".wrangler/logs"
+WASM_BINDGEN_BIN = "wasm-bindgen"
+WORKER_BUILD_VERSION = "0.8.5"
+WASM_BINDGEN_CLI_VERSION = "0.2.126"
+
 [tasks.setup]
 description = "Install Worker build tools used by Wrangler"
 run = '''
-cargo install --locked worker-build --version 0.8.5
-cargo install --locked wasm-bindgen-cli --version 0.2.126
+cargo install --locked worker-build --version "$WORKER_BUILD_VERSION"
+cargo install --locked wasm-bindgen-cli --version "$WASM_BINDGEN_CLI_VERSION"
 '''
 
 [tasks.build]
-description = "Build the Worker bundle"
-run = 'command -v wasm-bindgen >/dev/null && WASM_BINDGEN_BIN="$(command -v wasm-bindgen)" worker-build --release crates/worker'
+description = "Build the Worker bundle through Wrangler"
+run = "CI=1 wrangler deploy --dry-run"
 
 [tasks.check]
 description = "Check formatting, native crates, wasm-compatible crates, and clippy"
