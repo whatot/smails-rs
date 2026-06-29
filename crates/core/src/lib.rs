@@ -55,7 +55,7 @@ pub struct DeliverMessage {
     pub from_name: String,
     pub subject: String,
     pub preview: String,
-    pub body: String,
+    pub raw: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -89,7 +89,7 @@ pub fn parse_auth_header(header: Option<&str>) -> Option<String> {
 
 pub fn parse_mailbox_token(token: &str) -> Option<ParsedToken> {
     let (address, secret) = token.split_once('.')?;
-    if !is_mailbox_name(address) || secret.is_empty() {
+    if !is_mailbox_name(address) || !is_token_secret(secret) {
         return None;
     }
     Some(ParsedToken {
@@ -111,6 +111,13 @@ pub fn is_mailbox_name(value: &str) -> bool {
         && value
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+pub fn is_token_secret(value: &str) -> bool {
+    value.len() == 32
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 pub fn message_path(id: &str) -> String {
@@ -142,11 +149,11 @@ mod tests {
 
     #[test]
     fn parses_mailbox_token() {
-        let parsed = parse_mailbox_token("demo.secret").unwrap();
+        let parsed = parse_mailbox_token("demo.0123456789abcdef0123456789abcdef").unwrap();
         assert_eq!(parsed.address, "demo");
-        assert_eq!(parsed.secret, "secret");
+        assert_eq!(parsed.secret, "0123456789abcdef0123456789abcdef");
         assert_eq!(
-            mailbox_name_from_token("demo.secret").as_deref(),
+            mailbox_name_from_token("demo.0123456789abcdef0123456789abcdef").as_deref(),
             Some("demo")
         );
     }
@@ -154,7 +161,8 @@ mod tests {
     #[test]
     fn rejects_bad_mailbox_names() {
         assert!(parse_mailbox_token("demo@example.secret").is_none());
-        assert!(parse_mailbox_token("Demo.secret").is_none());
-        assert!(parse_mailbox_token("demo.").is_none());
+        assert!(parse_mailbox_token("Demo.0123456789abcdef0123456789abcdef").is_none());
+        assert!(parse_mailbox_token("demo.secret").is_none());
+        assert!(parse_mailbox_token("demo.0123456789ABCDEF0123456789ABCDEF").is_none());
     }
 }

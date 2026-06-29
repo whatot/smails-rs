@@ -32,7 +32,7 @@ run = "wrangler deploy"
 description = "Probe the local dev Worker on 127.0.0.1:8787"
 run = '''
 curl --noproxy '*' -sS http://127.0.0.1:8787/health
-curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/api/mailbox -H 'content-type: application/json' -d '{"address":"demo","token":"demo.secret"}'
+curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/api/mailbox -H 'content-type: application/json' -d '{"address":"demo","token":"demo.0123456789abcdef0123456789abcdef"}'
 curl --noproxy '*' -sS -X POST http://127.0.0.1:8787/__test/email -H 'content-type: application/json' -d '{"to":"demo@smails.dev","from":"sender@example.com","subject":"hello","body":"one time code: 123456"}'
-curl --noproxy '*' -sS http://127.0.0.1:8787/api/mailbox/messages -H 'authorization: Bearer demo.secret'
+curl --noproxy '*' -sS http://127.0.0.1:8787/api/mailbox/messages -H 'authorization: Bearer demo.0123456789abcdef0123456789abcdef'
 '''

@@ -1,9 +1,26 @@
 name = "smails-rs"
 main = "crates/worker/build/worker/shim.mjs"
 compatibility_date = "2026-06-29"
+observability = { enabled = true }
+upload_source_maps = true
+routes = [
+  { pattern = "smails.dev/*", zone_name = "smails.dev" }
+]
 
 [build]
 command = "cargo install -q \"worker-build@^0.8\" && worker-build --release crates/worker"
+
+[assets]
+directory = "crates/frontend/static"
+not_found_handling = "single-page-application"
+html_handling = "drop-trailing-slash"
+run_worker_first = ["/api/*", "/health", "/__test/*"]
+
+[vars]
+DOMAINS = "smails.dev"
+
+[version_metadata]
+binding = "CF_VERSION"
 
 [durable_objects]
 bindings = [

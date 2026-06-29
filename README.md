@@ -10,8 +10,9 @@ with workers-rs:
 - hibernatable WebSocket callbacks
 - Rust-exported `email` handler
 
-This is intentionally not the product rewrite yet. It keeps address/token
-generation as caller-provided test data so the platform pieces stay visible.
+This is intentionally not the product rewrite yet. It keeps a tiny static
+asset shell and caller-provided test mailbox data so the platform pieces stay
+visible.
 
 ## Layout
 
@@ -28,6 +29,7 @@ crates/
     src/lib.rs             # fetch/email/Durable Object entrypoint
   frontend/
     src/lib.rs             # wasm frontend helpers shared with browser code
+    static/index.html      # minimal Workers Assets shell
   cli/
     src/main.rs            # smails CLI entrypoint
   mcp/
@@ -52,14 +54,14 @@ compatibility.
 ```bash
 curl -X POST http://127.0.0.1:8787/api/mailbox \
   -H 'content-type: application/json' \
-  -d '{"address":"demo","token":"demo.secret"}'
+  -d '{"address":"demo","token":"demo.0123456789abcdef0123456789abcdef"}'
 
 curl -X POST http://127.0.0.1:8787/__test/email \
   -H 'content-type: application/json' \
   -d '{"to":"demo@smails.dev","from":"sender@example.com","subject":"hello","body":"one time code: 123456"}'
 
 curl http://127.0.0.1:8787/api/mailbox/messages \
-  -H 'authorization: Bearer demo.secret'
+  -H 'authorization: Bearer demo.0123456789abcdef0123456789abcdef'
 ```
 
 Real Cloudflare Email Routing must still be checked after deploy, because local
