@@ -3,10 +3,19 @@ use std::collections::HashSet;
 use serde::Deserialize;
 use worker::{Result, SqlStorage};
 
-const CURRENT_SCHEMA_VERSION: i64 = 2;
 const MESSAGES_TABLE: &str = "messages";
-const LEGACY_MESSAGES_TABLE: &str = "messages_legacy_v1";
-const NEXT_MESSAGES_TABLE: &str = "messages_v2";
+const LEGACY_MESSAGES_TABLE: &str = "messages_legacy_v2";
+const NEXT_MESSAGES_TABLE: &str = "messages_v3";
+
+struct Migration {
+    version: i64,
+    up: fn(&SqlStorage) -> Result<()>,
+}
+
+const MIGRATIONS: &[Migration] = &[Migration {
+    version: 3,
+    up: migrate_to_v3,
+}];
 
 const CREATE_MESSAGES: &str = "CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
@@ -16,19 +25,9 @@ const CREATE_MESSAGES: &str = "CREATE TABLE IF NOT EXISTS messages (
     preview TEXT NOT NULL,
     html TEXT NOT NULL,
     text TEXT NOT NULL,
+    attachments TEXT NOT NULL,
     received_at INTEGER NOT NULL,
     read INTEGER NOT NULL DEFAULT 0
-)";
-
-const CREATE_ATTACHMENTS: &str = "CREATE TABLE IF NOT EXISTS message_attachments (
-    message_id TEXT NOT NULL,
-    attachment_index INTEGER NOT NULL,
-    filename TEXT NOT NULL,
-    content_type TEXT NOT NULL,
-    content_id TEXT NOT NULL,
-    disposition TEXT NOT NULL,
-    size INTEGER NOT NULL,
-    PRIMARY KEY (message_id, attachment_index)
 )";
 
 #[derive(Deserialize)]
@@ -50,13 +49,13 @@ pub(crate) fn init_schema(sql: &SqlStorage) -> Result<()> {
         None,
     )?;
 
-    if current_version(sql)? < CURRENT_SCHEMA_VERSION {
-        migrate_v2(sql)?;
-        mark_applied(sql, CURRENT_SCHEMA_VERSION)?;
-    } else if table_columns(sql, MESSAGES_TABLE)?.is_empty() {
-        create_schema(sql)?;
-    } else {
-        sql.exec(CREATE_ATTACHMENTS, None)?;
+    let version = current_version(sql)?;
+    for migration in MIGRATIONS {
+        if migration.version <= version {
+            continue;
+        }
+        (migration.up)(sql)?;
+        mark_applied(sql, migration.version)?;
     }
 
     Ok(())
@@ -72,7 +71,7 @@ fn current_version(sql: &SqlStorage) -> Result<i64> {
     Ok(rows.first().map(|row| row.version).unwrap_or_default())
 }
 
-fn migrate_v2(sql: &SqlStorage) -> Result<()> {
+fn migrate_to_v3(sql: &SqlStorage) -> Result<()> {
     let columns = table_columns(sql, MESSAGES_TABLE)?;
     if columns.is_empty() {
         create_schema(sql)?;
@@ -80,14 +79,12 @@ fn migrate_v2(sql: &SqlStorage) -> Result<()> {
     }
 
     rebuild_messages(sql, MESSAGES_TABLE, &columns)?;
-    sql.exec(CREATE_ATTACHMENTS, None)?;
+    sql.exec("DROP TABLE IF EXISTS message_attachments", None)?;
     Ok(())
 }
 
 fn create_schema(sql: &SqlStorage) -> Result<()> {
-    sql.exec(CREATE_MESSAGES, None)?;
-    sql.exec(CREATE_ATTACHMENTS, None)?;
-    Ok(())
+    sql.exec(CREATE_MESSAGES, None).map(|_| ())
 }
 
 fn rebuild_messages(sql: &SqlStorage, source_table: &str, columns: &HashSet<String>) -> Result<()> {
@@ -139,8 +136,8 @@ fn table_columns(sql: &SqlStorage, table: &str) -> Result<HashSet<String>> {
 
 fn copy_messages_sql(columns: &HashSet<String>, source_table: &str) -> String {
     format!(
-        "INSERT INTO {NEXT_MESSAGES_TABLE} (id, from_addr, from_name, subject, preview, html, text, received_at, read)
-         SELECT {}, {}, {}, {}, {}, {}, {}, {}, {} FROM {source_table}",
+        "INSERT INTO {NEXT_MESSAGES_TABLE} (id, from_addr, from_name, subject, preview, html, text, attachments, received_at, read)
+         SELECT {}, {}, {}, {}, {}, {}, {}, {}, {}, {} FROM {source_table}",
         expr(columns, "id", "lower(hex(randomblob(16)))"),
         expr(columns, "from_addr", "''"),
         expr(columns, "from_name", "''"),
@@ -148,6 +145,7 @@ fn copy_messages_sql(columns: &HashSet<String>, source_table: &str) -> String {
         expr(columns, "preview", "''"),
         html_expr(columns),
         text_expr(columns),
+        attachments_expr(columns),
         expr(columns, "received_at", "0"),
         expr(columns, "read", "0"),
     )
@@ -177,6 +175,10 @@ fn text_expr(columns: &HashSet<String>) -> String {
     }
 }
 
+fn attachments_expr(columns: &HashSet<String>) -> String {
+    expr(columns, "attachments", "'[]'")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,12 +189,13 @@ mod tests {
             .into_iter()
             .map(str::to_owned)
             .collect();
-        let sql = copy_messages_sql(&columns, "messages_legacy_v1");
+        let sql = copy_messages_sql(&columns, "messages_legacy_v2");
 
         assert!(!sql.contains(" raw,"));
+        assert!(sql.contains("'[]'"));
         assert!(sql.contains("COALESCE(body, '')"));
         assert!(sql.contains("COALESCE(received_at, 0)"));
         assert!(sql.contains("SELECT COALESCE(id, lower(hex(randomblob(16))))"));
-        assert!(sql.contains("FROM messages_legacy_v1"));
+        assert!(sql.contains("FROM messages_legacy_v2"));
     }
 }

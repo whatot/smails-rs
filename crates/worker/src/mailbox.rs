@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use smails_core::{Attachment, DeliverMessage, MessageDetail, MessageSummary, OkJson};
+use smails_core::{DeliverMessage, MessageDetail, MessageSummary, OkJson};
 use worker::{
     DurableObject, Env, Method, Request, Response, Result, State, WebSocket,
     WebSocketIncomingMessage, WebSocketPair,
@@ -19,18 +19,9 @@ struct StoredMessage {
     subject: String,
     html: String,
     text: String,
+    attachments: String,
     received_at: i64,
     read: i64,
-}
-
-#[derive(Deserialize)]
-struct StoredAttachment {
-    attachment_index: i64,
-    filename: String,
-    content_type: String,
-    content_id: String,
-    disposition: String,
-    size: i64,
 }
 
 impl Mailbox {
@@ -187,7 +178,7 @@ impl Mailbox {
         let Some(row) = rows.into_iter().next() else {
             return json_error("Message not found", 404);
         };
-        let attachments = self.attachments(&row.id)?;
+        let attachments = serde_json::from_str(&row.attachments).unwrap_or_default();
         Response::from_json(&MessageDetail {
             id: row.id,
             from_addr: row.from_addr,
@@ -206,10 +197,6 @@ impl Mailbox {
             return json_error("Unauthorized", 401);
         }
         self.touch().await?;
-        self.state.storage().sql().exec(
-            "DELETE FROM message_attachments WHERE message_id = ?",
-            vec![id.into()],
-        )?;
         self.state
             .storage()
             .sql()
@@ -226,9 +213,10 @@ impl Mailbox {
 
         let received_at = worker::Date::now().as_millis() as i64;
         let id = format!("msg-{}", random_hex(16));
+        let attachments = serde_json::to_string(&body.attachments)?;
         self.state.storage().sql().exec(
-            "INSERT INTO messages (id, from_addr, from_name, subject, preview, html, text, received_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (id, from_addr, from_name, subject, preview, html, text, attachments, received_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             vec![
                 id.clone().into(),
                 body.from_addr.into(),
@@ -237,25 +225,10 @@ impl Mailbox {
                 body.preview.into(),
                 body.html.unwrap_or_default().into(),
                 body.text.unwrap_or_default().into(),
+                attachments.into(),
                 received_at.into(),
             ],
         )?;
-        for attachment in body.attachments {
-            self.state.storage().sql().exec(
-                "INSERT INTO message_attachments
-                    (message_id, attachment_index, filename, content_type, content_id, disposition, size)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)",
-                vec![
-                    id.clone().into(),
-                    (attachment.index as i64).into(),
-                    attachment.filename.unwrap_or_default().into(),
-                    attachment.content_type.into(),
-                    attachment.content_id.unwrap_or_default().into(),
-                    attachment.disposition.unwrap_or_default().into(),
-                    (attachment.size as i64).into(),
-                ],
-            )?;
-        }
 
         let event = serde_json::json!({ "type": "new_message", "id": id }).to_string();
         for ws in self.state.get_websockets() {
@@ -274,37 +247,8 @@ impl Mailbox {
         self.touch().await?;
         Response::from_websocket(pair.client)
     }
-
-    fn attachments(&self, id: &str) -> Result<Vec<Attachment>> {
-        let rows = self
-            .state
-            .storage()
-            .sql()
-            .exec(
-                "SELECT attachment_index, filename, content_type, content_id, disposition, size
-                 FROM message_attachments
-                 WHERE message_id = ?
-                 ORDER BY attachment_index",
-                vec![id.into()],
-            )?
-            .to_array::<StoredAttachment>()?;
-        Ok(rows.into_iter().map(Attachment::from).collect())
-    }
 }
 
 fn present(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
-}
-
-impl From<StoredAttachment> for Attachment {
-    fn from(row: StoredAttachment) -> Self {
-        Self {
-            index: row.attachment_index.max(0) as usize,
-            filename: present(row.filename),
-            content_type: row.content_type,
-            content_id: present(row.content_id),
-            disposition: present(row.disposition),
-            size: row.size.max(0) as usize,
-        }
-    }
 }
