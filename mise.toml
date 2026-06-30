@@ -44,7 +44,12 @@ run = "wrangler dev --ip 127.0.0.1 --port 8787"
 
 [tasks.deploy]
 description = "Deploy the Worker with Wrangler"
-run = "wrangler deploy"
+run = '''
+set -eu
+: "${WORKER_DOMAIN:?Set WORKER_DOMAIN=mail.example.com}"
+: "${MAILBOX_DOMAINS:?Set MAILBOX_DOMAINS=example.com}"
+wrangler deploy --keep-vars --var "MAILBOX_DOMAINS:$MAILBOX_DOMAINS" --domain "$WORKER_DOMAIN"
+'''
 
 [tasks.probe]
 description = "Probe the local dev Worker on 127.0.0.1:8787"

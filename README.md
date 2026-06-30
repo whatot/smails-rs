@@ -111,7 +111,7 @@ mise run mcp
 Local HTTP probes do not prove Cloudflare Email Routing. Real email ingress
 must be checked after deployment.
 
-## Deploy
+## Deploy With GitHub Actions
 
 1. Choose the domains:
 
@@ -120,26 +120,61 @@ site/API domain: https://mail.example.com
 mailbox domain:  example.com
 ```
 
-2. Configure the Worker site/API domain in Cloudflare:
+2. Add GitHub repository variables:
 
-```toml
-[env.production]
-routes = [
-  { pattern = "mail.example.com", custom_domain = true }
-]
+```text
+WORKER_DOMAIN=mail.example.com
+MAILBOX_DOMAINS=example.com
 ```
 
-You can also add the custom domain in the Cloudflare dashboard under the
-Worker's Domains & Routes settings.
+3. Add GitHub repository secrets:
 
-3. Configure mailbox domains for the same Worker environment:
-
-```toml
-[env.production.vars]
-MAILBOX_DOMAINS = "example.com"
+```text
+CLOUDFLARE_API_TOKEN=<token allowed to deploy this Worker>
+CLOUDFLARE_ACCOUNT_ID=<optional account id if Wrangler cannot infer it>
 ```
 
-If deploying from the Cloudflare dashboard, add a Worker variable:
+4. Push to `main` or run the `CI` workflow manually.
+
+The workflow sets up Rust through `actions-rust-lang/setup-rust-toolchain@v1`
+and uses `jdx/mise-action@v2` for repo tools and tasks.
+
+It runs:
+
+```bash
+mise run setup
+mise run check
+mise run build
+```
+
+On `main`, it deploys with:
+
+```text
+mise run deploy
+```
+
+Cloudflare's online Worker deploy environment may not have `cargo`, so do not
+use the dashboard build step for this Rust project unless you install Rust
+there first.
+
+## Deploy Locally
+
+Local deploy uses the same explicit domain inputs:
+
+```bash
+WORKER_DOMAIN=mail.example.com MAILBOX_DOMAINS=example.com mise run deploy
+```
+
+## Configure Email Routing
+
+After the Worker is deployed, configure Cloudflare Email Routing for the
+mailbox domain.
+
+Route the desired addresses or catch-all for `example.com` to this Worker. This
+is separate from the HTTP custom domain. Without Email Routing, the frontend and
+API can work while inbound email still never reaches the `email()` handler.
+
+If configuring variables in the Cloudflare dashboard, use:
 
 ```text
 Variable name:  MAILBOX_DOMAINS
@@ -147,19 +182,7 @@ Variable value: example.com
 Encrypt:        off
 ```
 
-4. Deploy the Worker:
-
-```bash
-wrangler deploy --env production
-```
-
-5. Configure Cloudflare Email Routing for the mailbox domain.
-
-Route the desired addresses or catch-all for `example.com` to this Worker. This
-is separate from the HTTP custom domain. Without Email Routing, the frontend and
-API can work while inbound email still never reaches the `email()` handler.
-
-6. Verify production:
+## Verify Production
 
 ```bash
 curl https://mail.example.com/health
