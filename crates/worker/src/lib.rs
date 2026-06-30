@@ -28,8 +28,8 @@ pub struct Admin {
 }
 
 #[event(fetch, respond_with_errors)]
-pub async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
-    let mut response = http::handle_fetch(req, &env).await?;
+pub async fn fetch(req: Request, env: Env, ctx: Context) -> Result<Response> {
+    let mut response = http::handle_fetch(req, &env, &ctx).await?;
     support::add_version_header(&mut response, &env)?;
     Ok(response)
 }
