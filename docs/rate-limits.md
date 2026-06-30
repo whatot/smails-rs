@@ -80,12 +80,44 @@ SELECT or UPDATE+SELECT
 
 These are token-scoped. Do not add read limits until metrics show polling abuse.
 
+## Limit Placement
+
+```mermaid
+flowchart LR
+    Browser["Browser / CLI / MCP"] --> Create["POST /api/mailbox"]
+    Create --> CreateLimit{"RateLimit DO\n5/min per IP\n16 shards"}
+    CreateLimit -- "429" --> CreateReject["Reject\nRetry-After"]
+    CreateLimit -- "allow" --> CreateBody["Read 4 KB body\nvalidate domain/token"]
+    CreateBody --> MailboxCreate["Mailbox DO /create\nstore token + alarm"]
+    MailboxCreate --> Admin["Admin DO\nasync create counter"]
+
+    Email["Cloudflare Email Routing"] --> RawSize{"raw_size <= 512 KB"}
+    RawSize -- "too large" --> EmailReject["Reject message"]
+    RawSize -- "ok" --> RawBytes["Read raw bytes"]
+    RawBytes --> Deliver["Mailbox DO /deliver"]
+    Deliver --> Exists{"Mailbox exists?"}
+    Exists -- "no" --> DropUnknown["Drop before MIME parse"]
+    Exists -- "yes" --> DeliverLimit{"Mailbox memory window\n5/min per mailbox"}
+    DeliverLimit -- "limited" --> DropLimited["Drop before MIME parse / SQL"]
+    DeliverLimit -- "allow" --> Parse["MIME parse"]
+    Parse --> Store["INSERT message\ntrim to 100"]
+
+    Client["Browser / CLI / MCP"] --> Read["GET/DELETE /api/mailbox/messages"]
+    Read --> Auth["Mailbox DO auth"]
+    Auth --> SqlRead["SELECT / UPDATE by token + id"]
+    Read -. "no internal read limit yet" .-> Auth
+```
+
+Only `POST /api/mailbox` uses the sharded `RateLimit` Durable Objects. Incoming
+email uses the target mailbox object itself, after the mailbox existence check
+and before MIME parsing. Authenticated reads are intentionally not limited yet.
+
 ## Current Limits
 
 ```text
-mailbox create            10/min per client IP
-RateLimit lifecycle       16 shards, 512 active keys/shard
-incoming email            30/min per mailbox
+mailbox create            5/min per client IP
+RateLimit lifecycle       16 shards, 128 active keys/shard
+incoming email            5/min per mailbox
 messages stored           100 newest per mailbox
 mailbox lifetime          7 days since last use
 mailbox create body       4 KB
@@ -93,14 +125,14 @@ incoming email raw size   512 KB
 ```
 
 The `RateLimit` Durable Objects are fixed shards, not one object per client. At
-most `16 * 512 = 8192` client keys are tracked in memory during a window. When a
+most `16 * 128 = 2048` client keys are tracked in memory during a window. When a
 shard is full after pruning expired keys, new keys get `429`. No rate-limit
 state is written to Durable Object storage.
 
 The theoretical distributed create ceiling is:
 
 ```text
-8192 active IPs * 10 creates/min = 81,920 creates/min
+2048 active IPs * 5 creates/min = 10,240 creates/min
 ```
 
 This is not a business allowance. It is only the maximum in-memory tracking
@@ -126,8 +158,8 @@ mailbox creation          5-10/min per developer or CI runner
 messages                  10-30/min per active test mailbox
 ```
 
-The current defaults are intentionally generous enough for agent testing. If the
-service is exposed broadly without WAF, lower create first.
+The current defaults are intentionally conservative for public Free tier
+validation. Raise them temporarily only for known test environments.
 
 ## Tuning Guide
 
@@ -147,9 +179,9 @@ MAX_KEYS_PER_SHARD
 Recommended bands:
 
 ```text
-private testing           10/min/IP
+private testing           5/min/IP
 public Free tier          3-5/min/IP
-CI-heavy testing          10-20/min/IP for known runners only
+CI-heavy testing          10/min/IP for known runners only
 ```
 
 Lower `MAILBOX_CREATE_LIMIT` when:
@@ -177,9 +209,9 @@ MAIL_DELIVER_WINDOW_MS
 Recommended bands:
 
 ```text
-strict public service     10/min/mailbox
-current validation        30/min/mailbox
-automated test mailbox    60/min/mailbox, temporarily
+strict public service     5/min/mailbox
+current validation        5/min/mailbox
+automated test mailbox    30/min/mailbox, temporarily
 ```
 
 Lower `MAIL_DELIVER_LIMIT` when:

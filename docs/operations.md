@@ -6,9 +6,9 @@ The Worker has baseline protections in code:
 
 ```text
 mailbox create body        4 KB max
-mailbox create rate        10/min per client, in-memory DO window
+mailbox create rate        5/min per client, in-memory DO window
 incoming email raw size    512 KB max
-incoming email rate        30/min per mailbox, in-memory DO window
+incoming email rate        5/min per mailbox, in-memory DO window
 messages per mailbox       100 newest messages
 mailbox lifetime           7 days since last use
 attachments                metadata only; content is discarded
@@ -53,7 +53,7 @@ Zone:
 Candidate optional rules:
 
 ```text
-POST /api/mailbox          10 req/min per visitor
+POST /api/mailbox          5 req/min per visitor
 GET  /api/mailbox/connect  30 req/min per visitor
 /api/*                     300 req/min per visitor
 ```

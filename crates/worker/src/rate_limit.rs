@@ -7,12 +7,12 @@ use crate::{
     support::{RATE_LIMIT_BINDING, rate_limited},
 };
 
-pub(crate) const MAILBOX_CREATE_LIMIT: i64 = 10;
+pub(crate) const MAILBOX_CREATE_LIMIT: i64 = 5;
 pub(crate) const MAILBOX_CREATE_WINDOW_MS: i64 = 60_000;
-pub(crate) const MAIL_DELIVER_LIMIT: i64 = 30;
+pub(crate) const MAIL_DELIVER_LIMIT: i64 = 5;
 pub(crate) const MAIL_DELIVER_WINDOW_MS: i64 = 60_000;
 const RATE_LIMIT_SHARDS: u64 = 16;
-const MAX_KEYS_PER_SHARD: usize = 512;
+const MAX_KEYS_PER_SHARD: usize = 128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Window {
