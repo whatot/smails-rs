@@ -1,2 +1,0 @@
-zone_id     = "your-cloudflare-zone-id"
-worker_host = "mail.example.com"

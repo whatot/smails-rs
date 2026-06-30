@@ -2,8 +2,7 @@
 
 ## Built-in Protections
 
-The Worker has baseline protections in code, so the Cloudflare infra under
-`infra/cloudflare` is optional:
+The Worker has baseline protections in code:
 
 ```text
 mailbox create body        4 KB max
@@ -18,8 +17,8 @@ storage, or per-mailbox Durable Object state.
 
 ## Optional WAF Rate Limiting
 
-For production, you can additionally manage Cloudflare WAF rate limiting rules
-with OpenTofu in `infra/cloudflare`. These rules block traffic before it reaches
+For production, additionally manage Cloudflare WAF rate limiting rules in the
+private `whatot-cf-infra` repository. These rules block traffic before it reaches
 the Worker, but the Worker does not depend on them for basic protection.
 
 Required Cloudflare API token permissions:
@@ -28,22 +27,6 @@ Required Cloudflare API token permissions:
 Zone:
   WAF Write
   Zone Read
-```
-
-Set variables with `terraform.tfvars`, `*.auto.tfvars`, or environment
-variables:
-
-```bash
-export TF_VAR_zone_id=<cloudflare-zone-id>
-export TF_VAR_worker_host=mail.example.com
-```
-
-Then run:
-
-```bash
-mise run cf-init
-mise run cf-plan
-mise run cf-apply
 ```
 
 Current optional WAF rules:
