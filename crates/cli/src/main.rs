@@ -12,7 +12,7 @@ use std::process;
     disable_version_flag = true,
     about = "Disposable email for humans and agents",
     arg_required_else_help = true,
-    after_help = "Env:\n  SMAILS_API_URL  Override the API base URL (default https://smails.dev)\n  SMAILS_CONFIG   Override the config path (default ~/.smails)"
+    after_help = "Env:\n  SMAILS_API_URL  API base URL (default http://127.0.0.1:8787)\n  SMAILS_CONFIG   Override the config path (default ~/.smails)"
 )]
 struct Cli {
     #[arg(short = 'v', long = "version", action = ArgAction::Version, help = "Print version")]
@@ -28,6 +28,9 @@ enum Command {
         /// Domain to use for the mailbox.
         #[arg(long)]
         domain: Option<String>,
+        /// API base URL to use and save with the mailbox.
+        #[arg(long)]
+        api_url: Option<String>,
         /// Replace the current mailbox with a fresh one.
         #[arg(long)]
         force: bool,
@@ -54,7 +57,11 @@ fn main() {
 
 fn run(cli: Cli) -> Result<(), String> {
     match cli.command {
-        Command::Create { domain, force } => create(domain, force),
+        Command::Create {
+            domain,
+            api_url,
+            force,
+        } => create(domain, api_url, force),
         Command::Inbox => inbox(),
         Command::Read { id } => read(&id),
         Command::Delete { id } => delete(&id),
@@ -63,8 +70,8 @@ fn run(cli: Cli) -> Result<(), String> {
     }
 }
 
-fn create(domain: Option<String>, force: bool) -> Result<(), String> {
-    match create_mailbox(domain, force)? {
+fn create(domain: Option<String>, api_url: Option<String>, force: bool) -> Result<(), String> {
+    match create_mailbox(domain, force, api_url)? {
         CreateResult::Created { address } => println!("Mailbox created: {address}"),
         CreateResult::Existing { address } => {
             println!("You already have a mailbox: {address}");

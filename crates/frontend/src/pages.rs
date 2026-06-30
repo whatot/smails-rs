@@ -1,4 +1,4 @@
-use smails_core::DEFAULT_BASE_URL;
+use smails_core::LOCAL_BASE_URL;
 use web_sys::window;
 use yew::prelude::*;
 
@@ -200,7 +200,7 @@ fn site_base_url() -> String {
     window()
         .and_then(|window| window.location().origin().ok())
         .filter(|origin| origin != "null")
-        .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned())
+        .unwrap_or_else(|| LOCAL_BASE_URL.to_owned())
 }
 
 fn websocket_base_url(base_url: &str) -> String {

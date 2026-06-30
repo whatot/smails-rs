@@ -55,15 +55,28 @@ DOMAINS = "example.com,alt.example.com"
 ```
 
 The first domain is used when a create request does not specify one. The
-Cloudflare `routes` block in `wrangler.toml` is still deployment config, not a
-runtime Worker env var; change it per environment or omit it when deploying to
-workers.dev.
+Cloudflare route/custom domain is deployment config, not a runtime Worker env
+var. Configure it outside the Rust code, for example:
 
-Native tools default to `https://smails.dev`, but can target any deployment:
+```toml
+routes = [
+  { pattern = "mail.example.com/*", zone_name = "example.com" }
+]
+
+[vars]
+DOMAINS = "example.com"
+```
+
+Native tools default to local Wrangler dev. Point them at production once when
+creating a mailbox; the base URL is saved with the mailbox config:
 
 ```bash
-SMAILS_API_URL=https://mail.example.com smails create
+smails create --api-url https://mail.example.com
 ```
+
+MCP uses the same saved config. For a first-time MCP-only setup, pass
+`api_url` to the `create_mailbox` tool or set `SMAILS_API_URL` in the MCP
+server environment.
 
 Native-only code lives in `crates/native`, `crates/cli`, and `crates/mcp`.
 Only `core`, `worker`, and `frontend` are checked for `wasm32-unknown-unknown`

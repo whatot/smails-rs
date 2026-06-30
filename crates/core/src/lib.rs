@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_BASE_URL: &str = "https://smails.dev";
-pub const DEFAULT_DOMAIN: &str = "smails.dev";
+pub const LOCAL_BASE_URL: &str = "http://127.0.0.1:8787";
 pub const CONFIG_FILE: &str = ".smails";
 
 pub const PATH_DOMAINS: &str = "/api/domains";

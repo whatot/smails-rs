@@ -24,7 +24,10 @@ pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
             alarm: true,
             email_export: true,
         }),
-        (Method::Get, PATH_DOMAINS) => Response::from_json(&domains(env)),
+        (Method::Get, PATH_DOMAINS) => match domains(env) {
+            Some(domains) => Response::from_json(&domains),
+            None => json_error("DOMAINS is not configured", 500),
+        },
         (Method::Post, PATH_MAILBOX) => create_mailbox(req, env).await,
         (Method::Get, PATH_MESSAGES) => forward_authed(req, env, "messages", Method::Get).await,
         (Method::Get, path) if path.starts_with(&message_prefix) => {
@@ -61,7 +64,9 @@ async fn create_mailbox(mut req: Request, env: &Env) -> Result<Response> {
         Ok(body) => body,
         Err(response) => return Ok(response),
     };
-    let domains = domains(env);
+    let Some(domains) = domains(env) else {
+        return json_error("DOMAINS is not configured", 500);
+    };
     let domain = match mailbox_domain(body.domain, &domains) {
         Ok(domain) => domain,
         Err(()) => return json_error("invalid domain", 400),

@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use smails_core::DEFAULT_DOMAIN;
 use wasm_bindgen::prelude::*;
 use worker::{Env, Request, Response, Result};
 
@@ -56,22 +55,20 @@ pub(crate) fn add_version_header(response: &mut Response, env: &Env) -> Result<(
     Ok(())
 }
 
-pub(crate) fn domains(env: &Env) -> Vec<String> {
-    let value = env
-        .var("DOMAINS")
-        .map(|value| value.to_string())
-        .unwrap_or_else(|_| DEFAULT_DOMAIN.to_owned());
+pub(crate) fn domains(env: &Env) -> Option<Vec<String>> {
+    env.var("DOMAINS")
+        .ok()
+        .and_then(|value| parse_domains(&value.to_string()))
+}
+
+fn parse_domains(value: &str) -> Option<Vec<String>> {
     let domains: Vec<_> = value
         .split(',')
         .map(str::trim)
         .filter(|domain| !domain.is_empty())
         .map(str::to_owned)
         .collect();
-    if domains.is_empty() {
-        vec![DEFAULT_DOMAIN.to_owned()]
-    } else {
-        domains
-    }
+    (!domains.is_empty()).then_some(domains)
 }
 
 fn random_bytes(bytes_len: usize) -> Vec<u8> {
@@ -113,5 +110,14 @@ mod tests {
             DEMO_TOKEN,
             "demo.0123456789abcdef0123456789abcdee"
         ));
+    }
+
+    #[test]
+    fn parses_configured_domains() {
+        assert_eq!(
+            parse_domains(" example.com, alt.example.com ").unwrap(),
+            vec!["example.com", "alt.example.com"]
+        );
+        assert!(parse_domains(" , ").is_none());
     }
 }

@@ -56,6 +56,7 @@ fn tools() -> Value {
                 "type": "object",
                 "properties": {
                     "domain": { "type": "string" },
+                    "api_url": { "type": "string" },
                     "force": { "type": "boolean" }
                 }
             }
@@ -107,8 +108,12 @@ fn call_tool(params: Value) -> Result<Value, String> {
                 .get("domain")
                 .and_then(Value::as_str)
                 .map(str::to_owned);
+            let api_url = args
+                .get("api_url")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
             let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
-            match create_mailbox(domain, force)? {
+            match create_mailbox(domain, force, api_url)? {
                 CreateResult::Created { address } => content(format!("Mailbox created: {address}")),
                 CreateResult::Existing { address } => content(format!(
                     "A mailbox already exists: {address}. Pass force=true to replace it."

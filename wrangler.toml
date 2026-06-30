@@ -3,9 +3,6 @@ main = "crates/worker/build/worker/shim.mjs"
 compatibility_date = "2026-06-29"
 observability = { enabled = true }
 upload_source_maps = true
-routes = [
-  { pattern = "smails.dev/*", zone_name = "smails.dev" }
-]
 
 [build]
 command = "cargo build -p smails-frontend --target wasm32-unknown-unknown --release && wasm-bindgen target/wasm32-unknown-unknown/release/smails_frontend.wasm --target web --out-dir crates/frontend/static/pkg --out-name smails_frontend && WASM_BINDGEN_BIN=wasm-bindgen worker-build --release crates/worker"
@@ -17,8 +14,8 @@ html_handling = "drop-trailing-slash"
 run_worker_first = ["/api/*", "/health"]
 
 [vars]
-# Comma-separated mailbox domains; the first one is the default generated address domain.
-DOMAINS = "smails.dev"
+# Local/dev mailbox domains. Set production domains in Cloudflare or an env-specific Wrangler config.
+DOMAINS = "localhost"
 
 [version_metadata]
 binding = "CF_VERSION"

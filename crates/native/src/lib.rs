@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use smails_core::{
-    CONFIG_FILE, CreateMailboxRequest, DEFAULT_BASE_URL, MailboxCreated, MessageDetail,
+    CONFIG_FILE, CreateMailboxRequest, LOCAL_BASE_URL, MailboxCreated, MessageDetail,
     MessageSummary, OkJson, PATH_DOMAINS, PATH_MAILBOX, PATH_MESSAGES, authorization_header,
     message_path,
 };
@@ -16,6 +16,8 @@ pub type Result<T> = std::result::Result<T, String>;
 pub struct Config {
     pub address: String,
     pub token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,20 +35,31 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn anonymous() -> Self {
-        Self::new(None)
+        Self::new(None, None)
+    }
+
+    pub fn anonymous_with_base_url(base_url: Option<String>) -> Self {
+        Self::from_base_url(None, selected_base_url(base_url))
     }
 
     pub fn with_token(token: impl Into<String>) -> Self {
-        Self::new(Some(token.into()))
+        Self::new(Some(token.into()), None)
     }
 
-    fn new(token: Option<String>) -> Self {
+    fn with_config(config: Config) -> Self {
+        Self::new(Some(config.token), config.base_url)
+    }
+
+    fn new(token: Option<String>, configured_base_url: Option<String>) -> Self {
+        Self::from_base_url(token, selected_base_url(configured_base_url))
+    }
+
+    fn from_base_url(token: Option<String>, base_url: String) -> Self {
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(15)))
             .http_status_as_error(false)
             .build()
             .new_agent();
-        let base_url = env::var("SMAILS_API_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
         Self {
             agent,
             base_url: base_url.trim_end_matches('/').to_owned(),
@@ -170,6 +183,12 @@ pub fn load_config() -> Result<Option<Config>> {
     })
 }
 
+fn selected_base_url(configured: Option<String>) -> String {
+    configured
+        .or_else(|| env::var("SMAILS_API_URL").ok())
+        .unwrap_or_else(|| LOCAL_BASE_URL.to_owned())
+}
+
 pub fn save_config(config: &Config) -> Result<()> {
     let path = config_path()?;
     save_config_to_path(&path, config)
@@ -212,16 +231,22 @@ pub fn require_config() -> Result<Config> {
     load_config()?.ok_or_else(|| "No mailbox found. Run `smails create` first.".to_owned())
 }
 
-pub fn create_mailbox(domain: Option<String>, force: bool) -> Result<CreateResult> {
+pub fn create_mailbox(
+    domain: Option<String>,
+    force: bool,
+    api_url: Option<String>,
+) -> Result<CreateResult> {
     if !force && let Some(existing) = load_config()? {
         return Ok(CreateResult::Existing {
             address: existing.address,
         });
     }
-    let created = ApiClient::anonymous().create_mailbox(domain)?;
+    let api = ApiClient::anonymous_with_base_url(api_url);
+    let created = api.create_mailbox(domain)?;
     save_config(&Config {
         address: created.address.clone(),
         token: created.token,
+        base_url: Some(api.base_url.clone()),
     })?;
     Ok(CreateResult::Created {
         address: created.address,
@@ -230,7 +255,7 @@ pub fn create_mailbox(domain: Option<String>, force: bool) -> Result<CreateResul
 
 pub fn api_from_config() -> Result<ApiClient> {
     let config = require_config()?;
-    Ok(ApiClient::with_token(config.token))
+    Ok(ApiClient::with_config(config))
 }
 
 pub fn resolve_message_id(api: &ApiClient, id_or_prefix: &str) -> Result<String> {
@@ -277,13 +302,15 @@ mod tests {
         ));
         let path = dir.join("config.json");
         let config = Config {
-            address: "demo@smails.dev".to_owned(),
+            address: "demo@example.com".to_owned(),
             token: "demo.0123456789abcdef0123456789abcdef".to_owned(),
+            base_url: Some("https://mail.example.com".to_owned()),
         };
 
         save_config_to_path(&path, &config).unwrap();
         let saved = fs::read_to_string(&path).unwrap();
-        assert!(saved.contains("demo@smails.dev"));
+        assert!(saved.contains("demo@example.com"));
+        assert!(saved.contains("https://mail.example.com"));
 
         #[cfg(unix)]
         {
