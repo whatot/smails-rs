@@ -58,7 +58,7 @@ curl https://mail.example.com/admin/stats \
 The admin path only stores low-frequency counters:
 
 ```text
-total_mailboxes
+total_mailboxes_created  cumulative successful mailbox creations
 ```
 
 It does not store mailbox names, mailbox tokens, message subjects, senders,

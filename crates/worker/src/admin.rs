@@ -11,7 +11,7 @@ use crate::{
 };
 
 const ADMIN_INSTANCE: &str = "global";
-const COUNTER_TOTAL_MAILBOXES: &str = "total_mailboxes";
+const COUNTER_MAILBOXES_CREATED: &str = "total_mailboxes_created";
 
 #[derive(Deserialize, Serialize)]
 struct CounterRecord {
@@ -25,7 +25,7 @@ struct CountRow {
 
 #[derive(Serialize)]
 struct AdminStats {
-    total_mailboxes: i64,
+    total_mailboxes_created: i64,
 }
 
 impl DurableObject for Admin {
@@ -70,7 +70,7 @@ impl Admin {
 
     fn stats(&self) -> Result<Response> {
         Response::from_json(&AdminStats {
-            total_mailboxes: self.counter(COUNTER_TOTAL_MAILBOXES)?,
+            total_mailboxes_created: self.counter(COUNTER_MAILBOXES_CREATED)?,
         })
     }
 
@@ -103,7 +103,7 @@ impl Admin {
 }
 
 pub(crate) async fn record_mailbox_created(env: &Env) -> Result<()> {
-    increment(env, COUNTER_TOTAL_MAILBOXES).await
+    increment(env, COUNTER_MAILBOXES_CREATED).await
 }
 
 pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
