@@ -53,15 +53,15 @@ wrangler deploy --keep-vars --var "MAILBOX_DOMAINS:$MAILBOX_DOMAINS" --domain "$
 '''
 
 [tasks.cf-init]
-description = "Initialize Cloudflare OpenTofu state"
+description = "Optional: initialize Cloudflare WAF OpenTofu state"
 run = "tofu -chdir=infra/cloudflare init"
 
 [tasks.cf-plan]
-description = "Plan Cloudflare WAF rate limiting rules"
+description = "Optional: plan Cloudflare WAF rate limiting rules"
 run = "tofu -chdir=infra/cloudflare plan -out=tfplan"
 
 [tasks.cf-apply]
-description = "Apply the last Cloudflare OpenTofu plan"
+description = "Optional: apply the last Cloudflare WAF OpenTofu plan"
 run = "tofu -chdir=infra/cloudflare apply tfplan"
 
 [tasks.probe]

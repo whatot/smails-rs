@@ -7,7 +7,9 @@ use worker::{Env, Method, Request, RequestInit, Response, Result};
 
 use crate::{
     admin,
-    support::{MAILBOX_BINDING, bearer, domains, json_error, random_hex, token},
+    support::{
+        MAILBOX_BINDING, MAX_CREATE_BODY_SIZE, bearer, domains, json_error, random_hex, token,
+    },
 };
 
 fn random_mailbox_name() -> String {
@@ -118,7 +120,18 @@ struct CreateMailboxResult {
 async fn create_mailbox_body(
     req: &mut Request,
 ) -> Result<std::result::Result<CreateMailboxRequest, Response>> {
+    if req
+        .headers()
+        .get("content-length")?
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|size| size > MAX_CREATE_BODY_SIZE)
+    {
+        return Ok(Err(json_error("Request body too large", 413)?));
+    }
     let text = req.text().await?;
+    if text.len() > MAX_CREATE_BODY_SIZE {
+        return Ok(Err(json_error("Request body too large", 413)?));
+    }
     if text.trim().is_empty() {
         return Ok(Ok(CreateMailboxRequest {
             domain: None,

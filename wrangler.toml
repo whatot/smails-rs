@@ -4,6 +4,9 @@ compatibility_date = "2026-06-29"
 observability = { enabled = true }
 upload_source_maps = true
 
+[limits]
+cpu_ms = 100
+
 [build]
 command = "cargo build -p smails-frontend --target wasm32-unknown-unknown --release && wasm-bindgen target/wasm32-unknown-unknown/release/smails_frontend.wasm --target web --out-dir crates/frontend/static/pkg --out-name smails_frontend && WASM_BINDGEN_BIN=wasm-bindgen worker-build --release crates/worker"
 

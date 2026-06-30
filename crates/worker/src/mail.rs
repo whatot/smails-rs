@@ -2,10 +2,7 @@ use smails_core::mailbox_name_from_address;
 use wasm_bindgen::prelude::*;
 use worker::{Env, ForwardableEmailMessage, Method, Request, RequestInit, Result};
 
-use crate::{
-    admin,
-    support::{MAILBOX_BINDING, MAX_RAW_SIZE},
-};
+use crate::support::{MAILBOX_BINDING, MAX_RAW_SIZE};
 
 #[derive(serde::Deserialize)]
 struct DeliverResult {
@@ -35,8 +32,7 @@ pub(crate) async fn handle_email(
     env: Env,
 ) -> std::result::Result<(), JsValue> {
     if message.raw_size() > MAX_RAW_SIZE {
-        admin::record_rejected_large(&env).await;
-        message.set_reject("Message too large (max 1.4MB)");
+        message.set_reject("Message too large (max 512KB)");
         return Ok(());
     }
 
@@ -47,7 +43,7 @@ pub(crate) async fn handle_email(
 
     match deliver(&env, &message.to(), &message.from(), &raw).await {
         Ok(true) => {}
-        Ok(false) => admin::record_unknown_mailbox(&env).await,
+        Ok(false) => {}
         Err(err) => return Err(JsValue::from_str(&format!("delivery failed: {err}"))),
     }
 

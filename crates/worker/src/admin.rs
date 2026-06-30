@@ -12,8 +12,6 @@ use crate::{
 
 const ADMIN_INSTANCE: &str = "global";
 const COUNTER_TOTAL_MAILBOXES: &str = "total_mailboxes";
-const COUNTER_REJECTED_LARGE_MESSAGES: &str = "rejected_large_messages";
-const COUNTER_UNKNOWN_MAILBOX_DELIVERIES: &str = "unknown_mailbox_deliveries";
 
 #[derive(Deserialize, Serialize)]
 struct CounterRecord {
@@ -28,8 +26,6 @@ struct CountRow {
 #[derive(Serialize)]
 struct AdminStats {
     total_mailboxes: i64,
-    rejected_large_messages: i64,
-    unknown_mailbox_deliveries: i64,
 }
 
 impl DurableObject for Admin {
@@ -75,8 +71,6 @@ impl Admin {
     fn stats(&self) -> Result<Response> {
         Response::from_json(&AdminStats {
             total_mailboxes: self.counter(COUNTER_TOTAL_MAILBOXES)?,
-            rejected_large_messages: self.counter(COUNTER_REJECTED_LARGE_MESSAGES)?,
-            unknown_mailbox_deliveries: self.counter(COUNTER_UNKNOWN_MAILBOX_DELIVERIES)?,
         })
     }
 
@@ -110,14 +104,6 @@ impl Admin {
 
 pub(crate) async fn record_mailbox_created(env: &Env) -> Result<()> {
     increment(env, COUNTER_TOTAL_MAILBOXES).await
-}
-
-pub(crate) async fn record_rejected_large(env: &Env) {
-    let _ = increment(env, COUNTER_REJECTED_LARGE_MESSAGES).await;
-}
-
-pub(crate) async fn record_unknown_mailbox(env: &Env) {
-    let _ = increment(env, COUNTER_UNKNOWN_MAILBOX_DELIVERIES).await;
 }
 
 pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
