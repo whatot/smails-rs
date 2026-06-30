@@ -61,6 +61,10 @@ pub(crate) fn rate_limited(message: &str, retry_after_seconds: i64) -> Result<Re
     Ok(response)
 }
 
+pub(crate) fn now_ms() -> i64 {
+    worker::Date::now().as_millis() as i64
+}
+
 pub(crate) fn add_version_header(response: &mut Response, env: &Env) -> Result<()> {
     if let Ok(version) = env.object_var::<VersionMetadata>("CF_VERSION") {
         let _ = response.headers_mut().set("X-Smails-Version", &version.id);

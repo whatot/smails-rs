@@ -167,11 +167,16 @@ Use this order. Each step is cheaper than adding a new subsystem.
 
 ### Create Abuse
 
-Adjust in `crates/worker/src/rate_limit.rs`:
+Adjust product limits in `crates/worker/src/rate_limit.rs`:
 
 ```rust
-MAILBOX_CREATE_LIMIT
-MAILBOX_CREATE_WINDOW_MS
+MAILBOX_CREATE_LIMIT.max
+MAILBOX_CREATE_LIMIT.window_ms
+```
+
+Adjust RateLimit DO capacity in `crates/worker/src/rate_limit.rs`:
+
+```rust
 RATE_LIMIT_SHARDS
 MAX_KEYS_PER_SHARD
 ```
@@ -202,8 +207,8 @@ protection.
 Adjust in `crates/worker/src/rate_limit.rs`:
 
 ```rust
-MAIL_DELIVER_LIMIT
-MAIL_DELIVER_WINDOW_MS
+MAIL_DELIVER_LIMIT.max
+MAIL_DELIVER_LIMIT.window_ms
 ```
 
 Recommended bands:

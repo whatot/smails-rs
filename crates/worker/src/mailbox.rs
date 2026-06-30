@@ -9,10 +9,10 @@ use crate::{
     Mailbox,
     mailbox_schema::init_schema,
     mime::parse_mail,
-    rate_limit::{MAIL_DELIVER_LIMIT, MAIL_DELIVER_WINDOW_MS, Window, hit_window, now_ms},
+    rate_limit::check_mail_deliver,
     support::{
-        EXPIRY_MS, MAX_MESSAGES_PER_MAILBOX, ONE_DAY_MS, constant_time_eq, json_error, random_hex,
-        token,
+        EXPIRY_MS, MAX_MESSAGES_PER_MAILBOX, ONE_DAY_MS, constant_time_eq, json_error, now_ms,
+        random_hex, token,
     },
 };
 
@@ -46,7 +46,7 @@ impl Mailbox {
 
     async fn refresh_if_stale(&self) -> Result<()> {
         let current = self.state.storage().get_alarm().await?;
-        let now = worker::Date::now().as_millis() as i64;
+        let now = now_ms();
         if current.is_none_or(|alarm| alarm - now < EXPIRY_MS - ONE_DAY_MS) {
             self.touch().await?;
         }
@@ -237,8 +237,8 @@ impl Mailbox {
         if self.state.storage().get::<String>("token").await?.is_none() {
             return Response::from_json(&DeliverResult { stored: false });
         }
-        if let Some(response) = self.check_deliver_rate()? {
-            return Ok(response);
+        if !check_mail_deliver(&self.deliver_window_started_at_ms, &self.deliver_count) {
+            return Response::from_json(&DeliverResult { stored: false });
         }
         if let Some(response) = self.ensure_schema()? {
             return Ok(response);
@@ -258,7 +258,7 @@ impl Mailbox {
             attachments: parsed.attachments,
         };
 
-        let received_at = worker::Date::now().as_millis() as i64;
+        let received_at = now_ms();
         let id = format!("msg-{}", random_hex(16));
         let attachments = serde_json::to_string(&body.attachments)?;
         self.state.storage().sql().exec(
@@ -291,27 +291,6 @@ impl Mailbox {
 
         Response::from_json(&DeliverResult { stored: true })
     }
-
-    fn check_deliver_rate(&self) -> Result<Option<Response>> {
-        let decision = hit_window(
-            Window {
-                started_at_ms: self.deliver_window_started_at_ms.get(),
-                count: self.deliver_count.get(),
-            },
-            now_ms(),
-            MAIL_DELIVER_LIMIT,
-            MAIL_DELIVER_WINDOW_MS,
-        );
-        self.deliver_window_started_at_ms
-            .set(decision.window.started_at_ms);
-        self.deliver_count.set(decision.window.count);
-        if decision.allowed {
-            Ok(None)
-        } else {
-            Response::from_json(&DeliverResult { stored: false }).map(Some)
-        }
-    }
-
     async fn connect(&self, req: Request) -> Result<Response> {
         if !self.auth(&req).await? {
             return json_error("Unauthorized", 401);

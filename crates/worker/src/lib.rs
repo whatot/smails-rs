@@ -1,5 +1,6 @@
 mod admin;
 mod admin_schema;
+mod fixed_window;
 mod http;
 mod mail;
 mod mailbox;
@@ -9,10 +10,7 @@ mod mime;
 mod rate_limit;
 mod support;
 
-use std::{
-    cell::{Cell, RefCell},
-    collections::HashMap,
-};
+use std::cell::{Cell, RefCell};
 
 use wasm_bindgen::prelude::*;
 use worker::{
@@ -35,8 +33,7 @@ pub struct Admin {
 
 #[durable_object]
 pub struct RateLimit {
-    pub(crate) windows: RefCell<HashMap<String, rate_limit::Window>>,
-    pub(crate) last_pruned_at_ms: Cell<i64>,
+    pub(crate) limiter: RefCell<fixed_window::Limiter>,
 }
 
 #[event(fetch, respond_with_errors)]
