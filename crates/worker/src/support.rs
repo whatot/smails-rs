@@ -56,7 +56,7 @@ pub(crate) fn add_version_header(response: &mut Response, env: &Env) -> Result<(
 }
 
 pub(crate) fn domains(env: &Env) -> Option<Vec<String>> {
-    env.var("DOMAINS")
+    env.var("MAILBOX_DOMAINS")
         .ok()
         .and_then(|value| parse_domains(&value.to_string()))
 }
