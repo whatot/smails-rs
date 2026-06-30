@@ -8,6 +8,8 @@ The Worker has baseline protections in code:
 mailbox create body        4 KB max
 incoming email raw size    512 KB max
 messages per mailbox       100 newest messages
+mailbox lifetime           7 days since last use
+attachments                metadata only; content is discarded
 Worker CPU per request     Cloudflare plan default
 ```
 
@@ -15,11 +17,16 @@ Unknown mailbox email delivery returns before MIME parsing and storage. This
 keeps Email Routing abuse from expanding into attachment parsing, message
 storage, or per-mailbox Durable Object state.
 
-## Optional WAF Rate Limiting
+## Optional Edge Rate Limiting
 
-For production, additionally manage Cloudflare WAF rate limiting rules in the
-private `whatot-cf-infra` repository. These rules block traffic before it reaches
-the Worker, but the Worker does not depend on them for basic protection.
+Cloudflare Free tier cannot create the WAF rate limiting rules this project
+would use. On Free tier, rely on the built-in Worker protections above and watch
+Worker/Durable Object usage.
+
+If the account is upgraded or already has WAF rate limiting, manage the optional
+edge rules in the private `whatot-cf-infra` repository. These rules block HTTP
+traffic before it reaches the Worker, but the Worker does not depend on them for
+basic protection.
 
 Required Cloudflare API token permissions:
 
@@ -29,7 +36,7 @@ Zone:
   Zone Read
 ```
 
-Current optional WAF rules:
+Candidate optional rules:
 
 ```text
 POST /api/mailbox          10 req/min per visitor

@@ -27,18 +27,6 @@ pub fn shell(props: &ShellProps) -> Html {
     }
 }
 
-#[function_component(Hero)]
-pub fn hero() -> Html {
-    html! {
-        <section id="top" class="hero">
-            <p class="eyebrow">{"Agent-native - No signup - Free"}</p>
-            <h1>{"Disposable email for humans and agents."}</h1>
-            <p>{"An instant throwaway inbox for sign-ups, codes, and confirmations with a REST API, CLI, and MCP server."}</p>
-            <a class="primary" href="#inbox">{"Get my inbox"}</a>
-        </section>
-    }
-}
-
 #[derive(Properties, PartialEq)]
 pub struct InboxProps {
     pub address: String,
@@ -74,19 +62,20 @@ pub fn inbox(props: &InboxProps) -> Html {
             <div class="inbox-card">
                 <div class="inbox-header">
                     <div class="address-block">
-                        <span>{"Your live inbox"}</span>
+                        <span>{"Current address"}</span>
                         <code>{ if props.address.is_empty() { " ".to_owned() } else { props.address.clone() } }</code>
                     </div>
                     <div class="actions">
-                        <button type="button" title="New address" onclick={props.on_new.clone()}>{"+"}</button>
-                        <button type="button" title="Refresh" onclick={props.on_refresh.clone()}>{"Refresh"}</button>
-                        <button type="button" title="Copy" onclick={props.on_copy.clone()}>{"Copy"}</button>
+                        <button type="button" class="primary-action" title="Copy address" onclick={props.on_copy.clone()}>{"Copy"}</button>
+                        <button type="button" title="Refresh inbox" onclick={props.on_refresh.clone()}>{"Refresh"}</button>
+                        <button type="button" title="New address" onclick={props.on_new.clone()}>{"New"}</button>
                     </div>
                 </div>
 
                 <div class="status-row">
-                    <span>{format!("{} messages", props.messages.len())}{ if unread > 0 { format!(" - {unread} unread") } else { String::new() } }</span>
-                    <span class={classes!("live-dot", ws_class(props.ws_status))}>{ws_label(props.ws_status)}</span>
+                    <span class="status-item"><strong>{props.messages.len()}</strong>{" messages"}</span>
+                    <span class="status-item"><strong>{unread}</strong>{" unread"}</span>
+                    <span class={classes!("status-item", "live-dot", ws_class(props.ws_status))}>{ws_label(props.ws_status)}</span>
                 </div>
 
                 if let Some(notice) = &props.notice {

@@ -5,7 +5,7 @@ use yew::prelude::*;
 
 use crate::{
     api::{self, ApiError, ApiResponse},
-    components::{AgentDocs, ApiDocs, Faq, Hero, Inbox, Shell},
+    components::{AgentDocs, ApiDocs, Faq, Inbox, Shell},
     pages::{ApiPage, McpPage, OtpPage},
     storage,
     ws::{LiveSocket, WsStatus},
@@ -107,7 +107,6 @@ fn home_page() -> Html {
     html! {
         <Shell>
             <LiveSocket token={state.token.clone()} on_status={ws_status} on_new_message={ws_new_message} />
-            <Hero />
             <Inbox
                 address={state.address.clone()}
                 messages={state.messages.clone()}
