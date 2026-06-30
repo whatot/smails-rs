@@ -82,6 +82,16 @@ WORKER_DOMAIN=mail.example.com
 MAILBOX_DOMAINS=example.com
 ```
 
+For multiple mailbox domains, use one comma-separated value in the repository
+variable. Spaces are trimmed, but keeping it compact is easier to scan:
+
+```text
+MAILBOX_DOMAINS=example.com,alt.example.com
+```
+
+Do not include `https://`, path segments, or the Worker site/API hostname unless
+that hostname is also an Email Routing mailbox domain.
+
 Add repository secrets:
 
 ```text
