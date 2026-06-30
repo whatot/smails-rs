@@ -11,7 +11,7 @@ command = "cargo build -p smails-frontend --target wasm32-unknown-unknown --rele
 directory = "crates/frontend/static"
 not_found_handling = "single-page-application"
 html_handling = "drop-trailing-slash"
-run_worker_first = ["/api/*", "/health"]
+run_worker_first = ["/api/*", "/admin/*", "/health"]
 
 [vars]
 # Local/dev mailbox domains. Set production domains in Cloudflare or an env-specific Wrangler config.
@@ -22,9 +22,14 @@ binding = "CF_VERSION"
 
 [durable_objects]
 bindings = [
-  { name = "MAILBOX", class_name = "Mailbox" }
+  { name = "MAILBOX", class_name = "Mailbox" },
+  { name = "ADMIN", class_name = "Admin" }
 ]
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Mailbox"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Admin"]

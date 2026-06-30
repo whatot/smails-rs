@@ -7,8 +7,12 @@ use worker::{
 
 use crate::{
     Mailbox,
-    schema::init_schema,
-    support::{EXPIRY_MS, ONE_DAY_MS, constant_time_eq, json_error, random_hex, token},
+    mailbox_schema::init_schema,
+    mime::{display_fields, parse_mail},
+    support::{
+        EXPIRY_MS, MAX_MESSAGES_PER_MAILBOX, ONE_DAY_MS, constant_time_eq, json_error, random_hex,
+        token,
+    },
 };
 
 #[derive(Deserialize)]
@@ -22,6 +26,16 @@ struct StoredMessage {
     attachments: String,
     received_at: i64,
     read: i64,
+}
+
+#[derive(serde::Serialize)]
+struct DeliverResult {
+    stored: bool,
+}
+
+#[derive(serde::Serialize)]
+struct CreateResult {
+    created: bool,
 }
 
 impl Mailbox {
@@ -136,9 +150,10 @@ impl Mailbox {
         {
             return json_error("Mailbox already exists", 409);
         }
+        let created = existing.is_none();
         self.state.storage().put("token", new_token).await?;
         self.touch().await?;
-        Response::from_json(&OkJson { ok: true })
+        Response::from_json(&CreateResult { created })
     }
 
     async fn list(&self, req: Request) -> Result<Response> {
@@ -206,11 +221,24 @@ impl Mailbox {
     }
 
     async fn deliver(&self, mut req: Request) -> Result<Response> {
-        let body = req.json::<DeliverMessage>().await?;
         self.touch().await?;
         if self.state.storage().get::<String>("token").await?.is_none() {
-            return Response::from_json(&OkJson { ok: true });
+            return Response::from_json(&DeliverResult { stored: false });
         }
+
+        let from = req.headers().get("x-smails-from")?.unwrap_or_default();
+        let raw = req.bytes().await?;
+        let display = display_fields(&raw, &from);
+        let parts = parse_mail(&raw);
+        let body = DeliverMessage {
+            from_addr: from,
+            from_name: display.from_name,
+            subject: display.subject,
+            preview: display.preview,
+            html: parts.html,
+            text: parts.text,
+            attachments: parts.attachments,
+        };
 
         let received_at = worker::Date::now().as_millis() as i64;
         let id = format!("msg-{}", random_hex(16));
@@ -230,13 +258,20 @@ impl Mailbox {
                 received_at.into(),
             ],
         )?;
+        self.state.storage().sql().exec(
+            "DELETE FROM messages
+             WHERE id NOT IN (
+                SELECT id FROM messages ORDER BY received_at DESC LIMIT ?
+             )",
+            vec![MAX_MESSAGES_PER_MAILBOX.into()],
+        )?;
 
         let event = serde_json::json!({ "type": "new_message", "id": id }).to_string();
         for ws in self.state.get_websockets() {
             ws.send_with_str(&event)?;
         }
 
-        Response::from_json(&OkJson { ok: true })
+        Response::from_json(&DeliverResult { stored: true })
     }
 
     async fn connect(&self, req: Request) -> Result<Response> {

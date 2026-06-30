@@ -1,4 +1,5 @@
 [tools]
+opentofu = "1.11.6"
 wrangler = "4.105.0"
 
 [env]
@@ -50,6 +51,18 @@ set -eu
 : "${MAILBOX_DOMAINS:?Set MAILBOX_DOMAINS=example.com}"
 wrangler deploy --keep-vars --var "MAILBOX_DOMAINS:$MAILBOX_DOMAINS" --domain "$WORKER_DOMAIN"
 '''
+
+[tasks.cf-init]
+description = "Initialize Cloudflare OpenTofu state"
+run = "tofu -chdir=infra/cloudflare init"
+
+[tasks.cf-plan]
+description = "Plan Cloudflare WAF rate limiting rules"
+run = "tofu -chdir=infra/cloudflare plan -out=tfplan"
+
+[tasks.cf-apply]
+description = "Apply the last Cloudflare OpenTofu plan"
+run = "tofu -chdir=infra/cloudflare apply tfplan"
 
 [tasks.probe]
 description = "Probe the local dev Worker on 127.0.0.1:8787"

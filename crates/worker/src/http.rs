@@ -5,7 +5,10 @@ use smails_core::{
 use wasm_bindgen::JsValue;
 use worker::{Env, Method, Request, RequestInit, Response, Result};
 
-use crate::support::{MAILBOX_BINDING, bearer, domains, json_error, random_hex, token};
+use crate::{
+    admin,
+    support::{MAILBOX_BINDING, bearer, domains, json_error, random_hex, token},
+};
 
 fn random_mailbox_name() -> String {
     format!("mail-{}", random_hex(4))
@@ -28,6 +31,7 @@ pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
             Some(domains) => Response::from_json(&domains),
             None => json_error("MAILBOX_DOMAINS is not configured", 500),
         },
+        (Method::Get, "/admin/stats") => admin::handle_fetch(req, env).await,
         (Method::Post, PATH_MAILBOX) => create_mailbox(req, env).await,
         (Method::Get, PATH_MESSAGES) => forward_authed(req, env, "messages", Method::Get).await,
         (Method::Get, path) if path.starts_with(&message_prefix) => {
@@ -95,11 +99,20 @@ async fn create_mailbox(mut req: Request, env: &Env) -> Result<Response> {
         return Ok(create_response);
     }
 
+    let mut create_response = create_response;
+    if create_response.json::<CreateMailboxResult>().await?.created {
+        admin::record_mailbox_created(env).await?;
+    }
     Response::from_json(&MailboxCreated {
         address: format!("{address}@{domain}"),
         token,
     })
     .map(|response| response.with_status(201))
+}
+
+#[derive(serde::Deserialize)]
+struct CreateMailboxResult {
+    created: bool,
 }
 
 async fn create_mailbox_body(

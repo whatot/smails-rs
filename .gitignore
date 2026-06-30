@@ -3,3 +3,5 @@ target/
 node_modules/
 /.wrangler/
 crates/frontend/static/pkg/
+**/.terraform/
+tfplan
