@@ -1,6 +1,7 @@
 mod http;
 mod mail;
 mod mailbox;
+mod migration;
 mod mime;
 mod schema;
 mod support;
