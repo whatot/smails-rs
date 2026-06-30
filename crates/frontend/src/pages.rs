@@ -120,7 +120,6 @@ ws.onmessage = (event) => {{
                         <Endpoint method="POST" path="/api/mailbox" desc="Create a mailbox and return address plus token." />
                         <Endpoint method="GET" path="/api/mailbox/messages" desc="List messages." />
                         <Endpoint method="GET" path="/api/mailbox/messages/:id" desc="Read a full parsed message." />
-                        <Endpoint method="GET" path="/api/mailbox/messages/:id/attachments/:index" desc="Download one attachment." />
                         <Endpoint method="DELETE" path="/api/mailbox/messages/:id" desc="Delete a message." />
                         <Endpoint method="WS" path="/api/mailbox/connect?token=" desc="Stream new-mail notifications." />
                     </div>

@@ -1,6 +1,5 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::Deserialize;
-use smails_core::{DeliverMessage, MessageDetail, MessageSummary, OkJson, attachment_filename};
+use smails_core::{Attachment, DeliverMessage, MessageDetail, MessageSummary, OkJson};
 use worker::{
     DurableObject, Env, Method, Request, Response, Result, State, WebSocket,
     WebSocketIncomingMessage, WebSocketPair,
@@ -8,7 +7,6 @@ use worker::{
 
 use crate::{
     Mailbox,
-    mime::{parse_attachment, parse_mail},
     schema::init_schema,
     support::{EXPIRY_MS, ONE_DAY_MS, constant_time_eq, json_error, random_hex, token},
 };
@@ -19,9 +17,20 @@ struct StoredMessage {
     from_addr: String,
     from_name: String,
     subject: String,
-    raw: String,
+    html: String,
+    text: String,
     received_at: i64,
     read: i64,
+}
+
+#[derive(Deserialize)]
+struct StoredAttachment {
+    attachment_index: i64,
+    filename: String,
+    content_type: String,
+    content_id: String,
+    disposition: String,
+    size: i64,
 }
 
 impl Mailbox {
@@ -67,12 +76,7 @@ impl DurableObject for Mailbox {
             (Method::Post, "/create") => self.create(req).await,
             (Method::Get, "/messages") => self.list(req).await,
             (Method::Get, path) if path.starts_with(message_prefix) => {
-                let rest = &path[message_prefix.len()..];
-                if let Some((id, index)) = attachment_request(rest) {
-                    self.download_attachment(req, id, index).await
-                } else {
-                    self.read(req, rest).await
-                }
+                self.read(req, &path[message_prefix.len()..]).await
             }
             (Method::Delete, path) if path.starts_with(message_prefix) => {
                 self.delete(req, &path[message_prefix.len()..]).await
@@ -183,8 +187,7 @@ impl Mailbox {
         let Some(row) = rows.into_iter().next() else {
             return json_error("Message not found", 404);
         };
-        let raw = BASE64.decode(row.raw).unwrap_or_default();
-        let parts = parse_mail(&raw);
+        let attachments = self.attachments(&row.id)?;
         Response::from_json(&MessageDetail {
             id: row.id,
             from_addr: row.from_addr,
@@ -192,40 +195,10 @@ impl Mailbox {
             subject: row.subject,
             received_at: row.received_at,
             read: row.read,
-            html: parts.html,
-            text: parts.text,
-            attachments: parts.attachments,
+            html: present(row.html),
+            text: present(row.text),
+            attachments,
         })
-    }
-
-    async fn download_attachment(&self, req: Request, id: &str, index: usize) -> Result<Response> {
-        if !self.auth(&req).await? {
-            return json_error("Unauthorized", 401);
-        }
-        self.touch().await?;
-        let rows = self
-            .state
-            .storage()
-            .sql()
-            .exec("SELECT * FROM messages WHERE id = ?", vec![id.into()])?
-            .to_array::<StoredMessage>()?;
-        let Some(row) = rows.into_iter().next() else {
-            return json_error("Message not found", 404);
-        };
-        let raw = BASE64.decode(row.raw).unwrap_or_default();
-        let Some(attachment) = parse_attachment(&raw, index) else {
-            return json_error("Attachment not found", 404);
-        };
-        let filename = attachment_filename(&attachment.metadata);
-        let mut response = Response::from_bytes(attachment.content)?;
-        response
-            .headers_mut()
-            .set("content-type", &attachment.metadata.content_type)?;
-        response.headers_mut().set(
-            "content-disposition",
-            &format!("attachment; filename=\"{filename}\""),
-        )?;
-        Ok(response)
     }
 
     async fn delete(&self, req: Request, id: &str) -> Result<Response> {
@@ -233,6 +206,10 @@ impl Mailbox {
             return json_error("Unauthorized", 401);
         }
         self.touch().await?;
+        self.state.storage().sql().exec(
+            "DELETE FROM message_attachments WHERE message_id = ?",
+            vec![id.into()],
+        )?;
         self.state
             .storage()
             .sql()
@@ -250,18 +227,35 @@ impl Mailbox {
         let received_at = worker::Date::now().as_millis() as i64;
         let id = format!("msg-{}", random_hex(16));
         self.state.storage().sql().exec(
-            "INSERT INTO messages (id, from_addr, from_name, subject, preview, raw, received_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (id, from_addr, from_name, subject, preview, html, text, received_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             vec![
                 id.clone().into(),
                 body.from_addr.into(),
                 body.from_name.into(),
                 body.subject.into(),
                 body.preview.into(),
-                body.raw.into(),
+                body.html.unwrap_or_default().into(),
+                body.text.unwrap_or_default().into(),
                 received_at.into(),
             ],
         )?;
+        for attachment in body.attachments {
+            self.state.storage().sql().exec(
+                "INSERT INTO message_attachments
+                    (message_id, attachment_index, filename, content_type, content_id, disposition, size)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                vec![
+                    id.clone().into(),
+                    (attachment.index as i64).into(),
+                    attachment.filename.unwrap_or_default().into(),
+                    attachment.content_type.into(),
+                    attachment.content_id.unwrap_or_default().into(),
+                    attachment.disposition.unwrap_or_default().into(),
+                    (attachment.size as i64).into(),
+                ],
+            )?;
+        }
 
         let event = serde_json::json!({ "type": "new_message", "id": id }).to_string();
         for ws in self.state.get_websockets() {
@@ -280,10 +274,37 @@ impl Mailbox {
         self.touch().await?;
         Response::from_websocket(pair.client)
     }
+
+    fn attachments(&self, id: &str) -> Result<Vec<Attachment>> {
+        let rows = self
+            .state
+            .storage()
+            .sql()
+            .exec(
+                "SELECT attachment_index, filename, content_type, content_id, disposition, size
+                 FROM message_attachments
+                 WHERE message_id = ?
+                 ORDER BY attachment_index",
+                vec![id.into()],
+            )?
+            .to_array::<StoredAttachment>()?;
+        Ok(rows.into_iter().map(Attachment::from).collect())
+    }
 }
 
-fn attachment_request(rest: &str) -> Option<(&str, usize)> {
-    let (id, index) = rest.split_once("/attachments/")?;
-    let index = index.parse().ok()?;
-    (!id.is_empty()).then_some((id, index))
+fn present(value: String) -> Option<String> {
+    (!value.is_empty()).then_some(value)
+}
+
+impl From<StoredAttachment> for Attachment {
+    fn from(row: StoredAttachment) -> Self {
+        Self {
+            index: row.attachment_index.max(0) as usize,
+            filename: present(row.filename),
+            content_type: row.content_type,
+            content_id: present(row.content_id),
+            disposition: present(row.disposition),
+            size: row.size.max(0) as usize,
+        }
+    }
 }

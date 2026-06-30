@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use smails_core::{
     CONFIG_FILE, CreateMailboxRequest, DEFAULT_BASE_URL, MailboxCreated, MessageDetail,
-    MessageSummary, OkJson, PATH_DOMAINS, PATH_MAILBOX, PATH_MESSAGES, attachment_path,
-    authorization_header, message_path,
+    MessageSummary, OkJson, PATH_DOMAINS, PATH_MAILBOX, PATH_MESSAGES, authorization_header,
+    message_path,
 };
 use std::{
     env, fs,
@@ -79,24 +79,6 @@ impl ApiClient {
     pub fn delete_message(&self, id: &str) -> Result<()> {
         let _: OkJson = self.request_json(Method::Delete, &message_path(id), None)?;
         Ok(())
-    }
-
-    pub fn download_attachment(&self, id: &str, index: usize) -> Result<Vec<u8>> {
-        let url = format!("{}{}", self.base_url, attachment_path(id, index));
-        let mut request = self.agent.get(&url);
-        if let Some(token) = &self.token {
-            request = request.header("Authorization", &authorization_header(token));
-        }
-        let mut response = request
-            .call()
-            .map_err(|err| format!("Network error: {err}"))?;
-        if !response.status().is_success() {
-            return Err(error_message(&mut response));
-        }
-        response
-            .body_mut()
-            .read_to_vec()
-            .map_err(|err| format!("Cannot read attachment: {err}"))
     }
 
     fn request_json<T: DeserializeOwned>(

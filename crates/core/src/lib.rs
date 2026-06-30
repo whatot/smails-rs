@@ -66,22 +66,9 @@ pub struct DeliverMessage {
     pub from_name: String,
     pub subject: String,
     pub preview: String,
-    pub raw: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct OkJson {
-    pub ok: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CapabilityJson {
-    pub fetch: bool,
-    pub durable_object: bool,
-    pub sqlite_storage: bool,
-    pub websocket: bool,
-    pub alarm: bool,
-    pub email_export: bool,
+    pub html: Option<String>,
+    pub text: Option<String>,
+    pub attachments: Vec<Attachment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,10 +122,6 @@ pub fn message_path(id: &str) -> String {
     format!("{PATH_MESSAGES}/{id}")
 }
 
-pub fn attachment_path(id: &str, index: usize) -> String {
-    format!("{}/attachments/{index}", message_path(id))
-}
-
 pub fn short_id(id: &str) -> &str {
     id.get(..8).unwrap_or(id)
 }
@@ -153,23 +136,19 @@ pub fn format_bytes(size: usize) -> String {
     }
 }
 
-pub fn attachment_filename(attachment: &Attachment) -> String {
-    attachment
-        .filename
-        .as_deref()
-        .map(safe_filename)
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| format!("attachment-{}", attachment.index))
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OkJson {
+    pub ok: bool,
 }
 
-pub fn safe_filename(value: &str) -> String {
-    value
-        .chars()
-        .map(|char| match char {
-            '"' | '\\' | '/' | '\0' | '\r' | '\n' => '_',
-            char => char,
-        })
-        .collect()
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CapabilityJson {
+    pub fetch: bool,
+    pub durable_object: bool,
+    pub sqlite_storage: bool,
+    pub websocket: bool,
+    pub alarm: bool,
+    pub email_export: bool,
 }
 
 pub fn preview_text(text: &str) -> String {

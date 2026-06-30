@@ -364,14 +364,21 @@ button:hover,
   padding: 10px 12px;
 }
 
-.attachment strong,
-.attachment span {
+.attachment-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachment-info strong,
+.attachment-info span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.attachment span {
+.attachment-info span {
   color: #657086;
   font-size: 12px;
 }

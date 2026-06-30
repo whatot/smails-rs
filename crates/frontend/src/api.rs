@@ -50,6 +50,25 @@ async fn request_json<T: DeserializeOwned>(
     token: Option<&str>,
     body: Option<String>,
 ) -> Result<ApiResponse<T>, ApiError> {
+    let response = request(method, path, token, body).await?;
+    let version = response.headers().get(VERSION_HEADER).ok().flatten();
+    if !response.ok() {
+        return Err(http_error(response).await);
+    }
+
+    let json = JsFuture::from(response.json().map_err(error_js)?)
+        .await
+        .map_err(error_js)?;
+    let data = serde_wasm_bindgen::from_value(json).map_err(error_message)?;
+    Ok(ApiResponse { data, version })
+}
+
+async fn request(
+    method: &str,
+    path: &str,
+    token: Option<&str>,
+    body: Option<String>,
+) -> Result<Response, ApiError> {
     let init = RequestInit::new();
     init.set_method(method);
     if let Some(body) = body {
@@ -70,7 +89,7 @@ async fn request_json<T: DeserializeOwned>(
             .map_err(error_js)?;
     }
 
-    let response = JsFuture::from(
+    JsFuture::from(
         window()
             .ok_or_else(|| error_message("window unavailable"))?
             .fetch_with_request(&request),
@@ -78,18 +97,7 @@ async fn request_json<T: DeserializeOwned>(
     .await
     .map_err(error_js)?
     .dyn_into::<Response>()
-    .map_err(error_js)?;
-
-    let version = response.headers().get(VERSION_HEADER).ok().flatten();
-    if !response.ok() {
-        return Err(http_error(response).await);
-    }
-
-    let json = JsFuture::from(response.json().map_err(error_js)?)
-        .await
-        .map_err(error_js)?;
-    let data = serde_wasm_bindgen::from_value(json).map_err(error_message)?;
-    Ok(ApiResponse { data, version })
+    .map_err(error_js)
 }
 
 async fn http_error(response: Response) -> ApiError {

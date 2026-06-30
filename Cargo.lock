@@ -1138,7 +1138,6 @@ dependencies = [
 name = "smails-worker"
 version = "0.1.0"
 dependencies = [
- "base64",
  "js-sys",
  "mail-parser",
  "serde",

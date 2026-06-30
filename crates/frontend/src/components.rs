@@ -203,11 +203,15 @@ fn message_detail(props: &MessageDetailProps) -> Html {
             if let Some(detail) = &props.detail {
                 if !detail.attachments.is_empty() {
                     <div class="attachments">
-                        { for detail.attachments.iter().map(|attachment| html! {
-                            <div class="attachment">
-                                <strong>{attachment.filename.as_deref().unwrap_or("attachment")}</strong>
-                                <span>{format!("{} - {}", attachment.content_type, format_bytes(attachment.size))}</span>
-                            </div>
+                        { for detail.attachments.iter().map(|attachment| {
+                            html! {
+                                <div class="attachment">
+                                    <span class="attachment-info">
+                                        <strong>{attachment.filename.as_deref().unwrap_or("attachment")}</strong>
+                                        <span>{format!("{} - {}", attachment.content_type, format_bytes(attachment.size))}</span>
+                                    </span>
+                                </div>
+                            }
                         })}
                     </div>
                 }
@@ -253,7 +257,7 @@ pub fn agent_docs() -> Html {
                 <h2>{"Give your agent its own inbox."}</h2>
                 <p>{"Humans and agents share the same mailbox. Drive it from the terminal, REST API, or MCP."}</p>
             </div>
-            <pre>{"smails create\nsmails inbox\nsmails read <id>\nsmails download <id> <index>"}</pre>
+            <pre>{"smails create\nsmails inbox\nsmails read <id>"}</pre>
             <pre>{"{\n  \"mcpServers\": {\n    \"smails\": { \"command\": \"smails\", \"args\": [\"mcp\"] }\n  }\n}"}</pre>
             <a class="text-link" href="/mcp">{"Read the MCP server guide"}</a>
         </section>

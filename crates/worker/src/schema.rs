@@ -3,20 +3,32 @@ use std::collections::HashSet;
 use serde::Deserialize;
 use worker::{Result, SqlStorage};
 
-const CURRENT_SCHEMA_VERSION: i64 = 1;
+const CURRENT_SCHEMA_VERSION: i64 = 2;
 const MESSAGES_TABLE: &str = "messages";
-const LEGACY_MESSAGES_TABLE: &str = "messages_legacy_v0";
-const NEXT_MESSAGES_TABLE: &str = "messages_v1";
+const LEGACY_MESSAGES_TABLE: &str = "messages_legacy_v1";
+const NEXT_MESSAGES_TABLE: &str = "messages_v2";
 
-const CREATE_MESSAGES: &str = "CREATE TABLE messages (
+const CREATE_MESSAGES: &str = "CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     from_addr TEXT NOT NULL,
     from_name TEXT NOT NULL,
     subject TEXT NOT NULL,
     preview TEXT NOT NULL,
-    raw TEXT NOT NULL,
+    html TEXT NOT NULL,
+    text TEXT NOT NULL,
     received_at INTEGER NOT NULL,
     read INTEGER NOT NULL DEFAULT 0
+)";
+
+const CREATE_ATTACHMENTS: &str = "CREATE TABLE IF NOT EXISTS message_attachments (
+    message_id TEXT NOT NULL,
+    attachment_index INTEGER NOT NULL,
+    filename TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    content_id TEXT NOT NULL,
+    disposition TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    PRIMARY KEY (message_id, attachment_index)
 )";
 
 #[derive(Deserialize)]
@@ -39,10 +51,12 @@ pub(crate) fn init_schema(sql: &SqlStorage) -> Result<()> {
     )?;
 
     if current_version(sql)? < CURRENT_SCHEMA_VERSION {
-        migrate_v1(sql)?;
+        migrate_v2(sql)?;
         mark_applied(sql, CURRENT_SCHEMA_VERSION)?;
     } else if table_columns(sql, MESSAGES_TABLE)?.is_empty() {
-        sql.exec(CREATE_MESSAGES, None)?;
+        create_schema(sql)?;
+    } else {
+        sql.exec(CREATE_ATTACHMENTS, None)?;
     }
 
     Ok(())
@@ -58,27 +72,25 @@ fn current_version(sql: &SqlStorage) -> Result<i64> {
     Ok(rows.first().map(|row| row.version).unwrap_or_default())
 }
 
-fn migrate_v1(sql: &SqlStorage) -> Result<()> {
+fn migrate_v2(sql: &SqlStorage) -> Result<()> {
     let columns = table_columns(sql, MESSAGES_TABLE)?;
     if columns.is_empty() {
-        let legacy_columns = table_columns(sql, LEGACY_MESSAGES_TABLE)?;
-        if !legacy_columns.is_empty() {
-            rebuild_messages(sql, LEGACY_MESSAGES_TABLE, &legacy_columns, false)?;
-            return Ok(());
-        }
-        sql.exec(CREATE_MESSAGES, None)?;
+        create_schema(sql)?;
         return Ok(());
     }
 
-    rebuild_messages(sql, MESSAGES_TABLE, &columns, true)
+    rebuild_messages(sql, MESSAGES_TABLE, &columns)?;
+    sql.exec(CREATE_ATTACHMENTS, None)?;
+    Ok(())
 }
 
-fn rebuild_messages(
-    sql: &SqlStorage,
-    source_table: &str,
-    columns: &HashSet<String>,
-    rename_current: bool,
-) -> Result<()> {
+fn create_schema(sql: &SqlStorage) -> Result<()> {
+    sql.exec(CREATE_MESSAGES, None)?;
+    sql.exec(CREATE_ATTACHMENTS, None)?;
+    Ok(())
+}
+
+fn rebuild_messages(sql: &SqlStorage, source_table: &str, columns: &HashSet<String>) -> Result<()> {
     sql.exec(
         format!("DROP TABLE IF EXISTS {NEXT_MESSAGES_TABLE}").as_str(),
         None,
@@ -90,16 +102,14 @@ fn rebuild_messages(
         None,
     )?;
     sql.exec(copy_messages_sql(columns, source_table).as_str(), None)?;
-    if rename_current {
-        sql.exec(
-            format!("DROP TABLE IF EXISTS {LEGACY_MESSAGES_TABLE}").as_str(),
-            None,
-        )?;
-        sql.exec(
-            format!("ALTER TABLE {MESSAGES_TABLE} RENAME TO {LEGACY_MESSAGES_TABLE}").as_str(),
-            None,
-        )?;
-    }
+    sql.exec(
+        format!("DROP TABLE IF EXISTS {LEGACY_MESSAGES_TABLE}").as_str(),
+        None,
+    )?;
+    sql.exec(
+        format!("ALTER TABLE {MESSAGES_TABLE} RENAME TO {LEGACY_MESSAGES_TABLE}").as_str(),
+        None,
+    )?;
     sql.exec(
         format!("ALTER TABLE {NEXT_MESSAGES_TABLE} RENAME TO {MESSAGES_TABLE}").as_str(),
         None,
@@ -129,14 +139,15 @@ fn table_columns(sql: &SqlStorage, table: &str) -> Result<HashSet<String>> {
 
 fn copy_messages_sql(columns: &HashSet<String>, source_table: &str) -> String {
     format!(
-        "INSERT INTO {NEXT_MESSAGES_TABLE} (id, from_addr, from_name, subject, preview, raw, received_at, read)
-         SELECT {}, {}, {}, {}, {}, {}, {}, {} FROM {source_table}",
+        "INSERT INTO {NEXT_MESSAGES_TABLE} (id, from_addr, from_name, subject, preview, html, text, received_at, read)
+         SELECT {}, {}, {}, {}, {}, {}, {}, {}, {} FROM {source_table}",
         expr(columns, "id", "lower(hex(randomblob(16)))"),
         expr(columns, "from_addr", "''"),
         expr(columns, "from_name", "''"),
         expr(columns, "subject", "'(no subject)'"),
         expr(columns, "preview", "''"),
-        raw_expr(columns),
+        html_expr(columns),
+        text_expr(columns),
         expr(columns, "received_at", "0"),
         expr(columns, "read", "0"),
     )
@@ -150,11 +161,17 @@ fn expr(columns: &HashSet<String>, column: &str, default: &str) -> String {
     }
 }
 
-fn raw_expr(columns: &HashSet<String>) -> String {
-    if columns.contains("raw") {
-        "COALESCE(raw, '')".to_owned()
+fn html_expr(columns: &HashSet<String>) -> String {
+    expr(columns, "html", "''")
+}
+
+fn text_expr(columns: &HashSet<String>) -> String {
+    if columns.contains("text") {
+        "COALESCE(text, '')".to_owned()
     } else if columns.contains("body") {
         "COALESCE(body, '')".to_owned()
+    } else if columns.contains("preview") {
+        "COALESCE(preview, '')".to_owned()
     } else {
         "''".to_owned()
     }
@@ -165,16 +182,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn copy_sql_preserves_old_body_column_as_raw() {
-        let columns = ["id", "body", "received_at"]
+    fn copy_sql_drops_raw_and_preserves_text_fallback() {
+        let columns = ["id", "body", "raw", "received_at"]
             .into_iter()
             .map(str::to_owned)
             .collect();
-        let sql = copy_messages_sql(&columns, "messages_legacy_v0");
+        let sql = copy_messages_sql(&columns, "messages_legacy_v1");
 
+        assert!(!sql.contains(" raw,"));
         assert!(sql.contains("COALESCE(body, '')"));
         assert!(sql.contains("COALESCE(received_at, 0)"));
         assert!(sql.contains("SELECT COALESCE(id, lower(hex(randomblob(16))))"));
-        assert!(sql.contains("FROM messages_legacy_v0"));
+        assert!(sql.contains("FROM messages_legacy_v1"));
     }
 }

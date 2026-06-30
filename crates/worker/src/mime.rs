@@ -14,11 +14,6 @@ pub(crate) struct ParsedMail {
     pub(crate) attachments: Vec<Attachment>,
 }
 
-pub(crate) struct AttachmentBody {
-    pub(crate) metadata: Attachment,
-    pub(crate) content: Vec<u8>,
-}
-
 pub(crate) fn parse_mail(raw: &[u8]) -> ParsedMail {
     MessageParser::default()
         .parse(raw)
@@ -28,18 +23,6 @@ pub(crate) fn parse_mail(raw: &[u8]) -> ParsedMail {
             attachments: attachments(&message),
         })
         .unwrap_or_default()
-}
-
-pub(crate) fn parse_attachment(raw: &[u8], index: usize) -> Option<AttachmentBody> {
-    MessageParser::default()
-        .parse(raw)?
-        .attachments()
-        .enumerate()
-        .find(|(part_index, _)| *part_index == index)
-        .map(|(part_index, part)| AttachmentBody {
-            metadata: attachment_metadata(part_index, part),
-            content: part.contents().to_vec(),
-        })
 }
 
 pub(crate) fn display_fields(raw: &[u8], fallback_from: &str) -> DisplayFields {
@@ -171,9 +154,5 @@ mod tests {
             Some("attachment")
         );
         assert_eq!(parsed.attachments[0].size, 5);
-
-        let body = parse_attachment(raw.as_bytes(), 0).unwrap();
-        assert_eq!(body.metadata.filename.as_deref(), Some("code.txt"));
-        assert_eq!(body.content, b"hello");
     }
 }

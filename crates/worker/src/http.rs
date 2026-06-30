@@ -28,15 +28,17 @@ pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
         (Method::Post, PATH_MAILBOX) => create_mailbox(req, env).await,
         (Method::Get, PATH_MESSAGES) => forward_authed(req, env, "messages", Method::Get).await,
         (Method::Get, path) if path.starts_with(&message_prefix) => {
-            if let Some(do_path) = attachment_do_path(path, &message_prefix) {
-                forward_authed(req, env, &do_path, Method::Get).await
-            } else {
-                let id = &path[message_prefix.len()..];
-                forward_authed(req, env, &format!("messages/{id}"), Method::Get).await
+            let id = &path[message_prefix.len()..];
+            if id.contains('/') {
+                return json_error("Not found", 404);
             }
+            forward_authed(req, env, &format!("messages/{id}"), Method::Get).await
         }
         (Method::Delete, path) if path.starts_with(&message_prefix) => {
             let id = &path[message_prefix.len()..];
+            if id.contains('/') {
+                return json_error("Not found", 404);
+            }
             forward_authed(req, env, &format!("messages/{id}"), Method::Delete).await
         }
         (Method::Get, "/api/mailbox/connect") => {
@@ -110,13 +112,6 @@ async fn create_mailbox_body(
         Ok(body) => Ok(Ok(body)),
         Err(_) => Ok(Err(json_error("Invalid JSON", 400)?)),
     }
-}
-
-fn attachment_do_path(path: &str, message_prefix: &str) -> Option<String> {
-    let rest = path.strip_prefix(message_prefix)?;
-    let (id, index) = rest.split_once("/attachments/")?;
-    (!id.is_empty() && index.parse::<usize>().is_ok())
-        .then(|| format!("messages/{id}/attachments/{index}"))
 }
 
 fn mailbox_domain(

@@ -1,10 +1,9 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use smails_core::{DeliverMessage, mailbox_name_from_address};
 use wasm_bindgen::prelude::*;
 use worker::{Env, ForwardableEmailMessage, Method, Request, RequestInit, Result};
 
 use crate::{
-    mime::display_fields,
+    mime::{display_fields, parse_mail},
     support::{MAILBOX_BINDING, MAX_RAW_SIZE},
 };
 
@@ -13,6 +12,7 @@ pub(crate) async fn deliver(env: &Env, to: &str, from: &str, raw_bytes: &[u8]) -
     let namespace = env.durable_object(MAILBOX_BINDING)?;
     let stub = namespace.get_by_name(&mailbox)?;
     let display = display_fields(raw_bytes, from);
+    let parts = parse_mail(raw_bytes);
 
     let mut init = RequestInit::new();
     init.with_method(Method::Post);
@@ -22,7 +22,9 @@ pub(crate) async fn deliver(env: &Env, to: &str, from: &str, raw_bytes: &[u8]) -
             from_name: display.from_name,
             subject: display.subject,
             preview: display.preview,
-            raw: BASE64.encode(raw_bytes),
+            html: parts.html,
+            text: parts.text,
+            attachments: parts.attachments,
         },
     )?)));
     let req = Request::new_with_init("https://do.internal/deliver", &init)?;
