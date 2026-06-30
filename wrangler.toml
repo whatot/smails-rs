@@ -37,4 +37,4 @@ new_sqlite_classes = ["Admin"]
 
 [[migrations]]
 tag = "v3"
-new_classes = ["RateLimit"]
+new_sqlite_classes = ["RateLimit"]
