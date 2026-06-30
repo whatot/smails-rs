@@ -4,6 +4,7 @@ use worker::{Env, Request, Response, Result};
 
 pub(crate) const MAILBOX_BINDING: &str = "MAILBOX";
 pub(crate) const ADMIN_BINDING: &str = "ADMIN";
+pub(crate) const RATE_LIMIT_BINDING: &str = "RATE_LIMIT";
 pub(crate) const ADMIN_TOKEN: &str = "ADMIN_TOKEN";
 pub(crate) const EXPIRY_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 pub(crate) const ONE_DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -50,6 +51,14 @@ pub(crate) fn json_error(message: &str, status: u16) -> Result<Response> {
         error: message.to_owned(),
     })
     .map(|response| response.with_status(status))
+}
+
+pub(crate) fn rate_limited(message: &str, retry_after_seconds: i64) -> Result<Response> {
+    let mut response = json_error(message, 429)?;
+    response
+        .headers_mut()
+        .set("retry-after", &retry_after_seconds.max(1).to_string())?;
+    Ok(response)
 }
 
 pub(crate) fn add_version_header(response: &mut Response, env: &Env) -> Result<()> {

@@ -11,6 +11,7 @@ Original TypeScript project: https://github.com/pexni/smails
 - [API and native clients](docs/api.md)
 - [Deployment](docs/deployment.md)
 - [Operations](docs/operations.md)
+- [Rate limit reference](docs/rate-limits.md)
 
 ## Local Development
 

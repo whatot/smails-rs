@@ -6,9 +6,13 @@ mod mailbox;
 mod mailbox_schema;
 mod migration;
 mod mime;
+mod rate_limit;
 mod support;
 
-use std::cell::Cell;
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+};
 
 use wasm_bindgen::prelude::*;
 use worker::{
@@ -19,12 +23,20 @@ use worker::{
 pub struct Mailbox {
     pub(crate) state: State,
     pub(crate) schema_ready: Cell<bool>,
+    pub(crate) deliver_window_started_at_ms: Cell<i64>,
+    pub(crate) deliver_count: Cell<i64>,
 }
 
 #[durable_object]
 pub struct Admin {
     pub(crate) state: State,
     pub(crate) schema_ready: Cell<bool>,
+}
+
+#[durable_object]
+pub struct RateLimit {
+    pub(crate) windows: RefCell<HashMap<String, rate_limit::Window>>,
+    pub(crate) last_pruned_at_ms: Cell<i64>,
 }
 
 #[event(fetch, respond_with_errors)]

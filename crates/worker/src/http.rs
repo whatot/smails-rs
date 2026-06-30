@@ -6,7 +6,7 @@ use wasm_bindgen::JsValue;
 use worker::{Context, Env, Method, Request, RequestInit, Response, Result};
 
 use crate::{
-    admin,
+    admin, rate_limit,
     support::{
         MAILBOX_BINDING, MAX_CREATE_BODY_SIZE, bearer, domains, json_error, random_hex, token,
     },
@@ -66,6 +66,10 @@ pub(crate) async fn handle_fetch(req: Request, env: &Env, ctx: &Context) -> Resu
 }
 
 async fn create_mailbox(mut req: Request, env: &Env, ctx: &Context) -> Result<Response> {
+    if let Some(response) = rate_limit::check_mailbox_create(&req, env).await? {
+        return Ok(response);
+    }
+
     let body = match create_mailbox_body(&mut req).await? {
         Ok(body) => body,
         Err(response) => return Ok(response),

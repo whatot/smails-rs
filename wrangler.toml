@@ -23,7 +23,8 @@ binding = "CF_VERSION"
 [durable_objects]
 bindings = [
   { name = "MAILBOX", class_name = "Mailbox" },
-  { name = "ADMIN", class_name = "Admin" }
+  { name = "ADMIN", class_name = "Admin" },
+  { name = "RATE_LIMIT", class_name = "RateLimit" }
 ]
 
 [[migrations]]
@@ -33,3 +34,7 @@ new_sqlite_classes = ["Mailbox"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Admin"]
+
+[[migrations]]
+tag = "v3"
+new_classes = ["RateLimit"]

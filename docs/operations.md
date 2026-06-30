@@ -6,7 +6,9 @@ The Worker has baseline protections in code:
 
 ```text
 mailbox create body        4 KB max
+mailbox create rate        10/min per client, in-memory DO window
 incoming email raw size    512 KB max
+incoming email rate        30/min per mailbox, in-memory DO window
 messages per mailbox       100 newest messages
 mailbox lifetime           7 days since last use
 attachments                metadata only; content is discarded
@@ -16,6 +18,18 @@ Worker CPU per request     Cloudflare plan default
 Unknown mailbox email delivery returns before MIME parsing and storage. This
 keeps Email Routing abuse from expanding into attachment parsing, message
 storage, or per-mailbox Durable Object state.
+
+The in-memory rate windows are abuse throttles, not accounting records. Mailbox
+creation is limited through a fixed set of sharded RateLimit Durable Objects;
+expired client keys are pruned after the window, and no rate-limit state is
+written to Durable Object storage. Windows can reset when an object cold-starts,
+but hot abuse stays inside the same object and is rejected before mailbox
+creation, MIME parsing, or message writes.
+Mailbox create throttles return HTTP 429 with `Retry-After`; incoming email
+throttles are silently discarded after the mailbox existence check so Email
+Routing does not retry them as Worker failures.
+
+For the tuning rationale and change checklist, see [Rate Limit Reference](rate-limits.md).
 
 ## Optional Edge Rate Limiting
 
