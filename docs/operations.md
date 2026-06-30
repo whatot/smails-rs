@@ -8,7 +8,7 @@ The Worker has baseline protections in code:
 mailbox create body        4 KB max
 incoming email raw size    512 KB max
 messages per mailbox       100 newest messages
-Worker CPU per request     100 ms max
+Worker CPU per request     Cloudflare plan default
 ```
 
 Unknown mailbox email delivery returns before MIME parsing and storage. This
