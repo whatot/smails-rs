@@ -83,6 +83,7 @@ impl DurableObject for Mailbox {
             ws.close(Some(1000), Some("expired"))?;
         }
         self.state.storage().delete_all().await?;
+        self.schema_ready.set(false);
         Response::empty()
     }
 

@@ -4,6 +4,8 @@ use smails_native::{
 };
 use std::io::{self, BufRead, BufReader, Write};
 
+const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+
 pub fn run_stdio() -> Result<(), String> {
     let stdin = io::stdin();
     let mut reader = BufReader::new(stdin.lock());
@@ -199,6 +201,9 @@ fn read_message(reader: &mut impl BufRead) -> Result<Option<Value>, String> {
     }
 
     let len = content_length.ok_or_else(|| "Missing Content-Length".to_owned())?;
+    if len > MAX_MESSAGE_BYTES {
+        return Err("Content-Length too large".to_owned());
+    }
     let mut body = vec![0; len];
     reader
         .read_exact(&mut body)
@@ -240,5 +245,15 @@ mod tests {
         let tools = response["result"]["tools"].as_array().unwrap();
         assert!(tools.iter().any(|tool| tool["name"] == "create_mailbox"));
         assert!(tools.iter().any(|tool| tool["name"] == "read_message"));
+    }
+
+    #[test]
+    fn rejects_oversized_rpc_frame() {
+        let mut input = b"Content-Length: 1048577\r\n\r\n".as_slice();
+
+        assert_eq!(
+            read_message(&mut input),
+            Err("Content-Length too large".to_owned())
+        );
     }
 }

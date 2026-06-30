@@ -86,7 +86,7 @@ async fn create_mailbox(mut req: Request, env: &Env) -> Result<Response> {
     init.with_body(Some(JsValue::from_str(&token)));
     let create_req = Request::new_with_init("https://do.internal/create", &init)?;
     let create_response = stub.fetch_with_request(create_req).await?;
-    if create_response.status_code() == 409 {
+    if !(200..300).contains(&create_response.status_code()) {
         return Ok(create_response);
     }
 

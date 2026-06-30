@@ -255,13 +255,9 @@ pub fn resolve_message_id(api: &ApiClient, id_or_prefix: &str) -> Result<String>
 }
 
 fn is_full_id(value: &str) -> bool {
-    let parts: Vec<_> = value.split('-').collect();
-    let lens = [8, 4, 4, 4, 12];
-    parts.len() == lens.len()
-        && parts
-            .iter()
-            .zip(lens)
-            .all(|(part, len)| part.len() == len && part.bytes().all(|b| b.is_ascii_hexdigit()))
+    value
+        .strip_prefix("msg-")
+        .is_some_and(|suffix| suffix.len() == 32 && suffix.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 #[cfg(test)]
@@ -298,5 +294,12 @@ mod tests {
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn recognizes_worker_message_ids() {
+        assert!(is_full_id("msg-0123456789abcdef0123456789abcdef"));
+        assert!(!is_full_id("01234567-89ab-cdef-0123-456789abcdef"));
+        assert!(!is_full_id("msg-0123456789abcdef0123456789abcdeg"));
     }
 }

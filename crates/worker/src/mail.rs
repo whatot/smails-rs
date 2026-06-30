@@ -28,7 +28,11 @@ pub(crate) async fn deliver(env: &Env, to: &str, from: &str, raw_bytes: &[u8]) -
         },
     )?)));
     let req = Request::new_with_init("https://do.internal/deliver", &init)?;
-    stub.fetch_with_request(req).await?;
+    let response = stub.fetch_with_request(req).await?;
+    let status = response.status_code();
+    if !(200..300).contains(&status) {
+        return Err(format!("mailbox deliver failed: HTTP {status}").into());
+    }
     Ok(())
 }
 
