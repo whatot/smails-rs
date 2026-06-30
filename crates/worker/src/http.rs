@@ -3,15 +3,20 @@ use smails_core::{
     PATH_MESSAGES, authorization_header, is_mailbox_name, mailbox_name_from_token,
 };
 use wasm_bindgen::JsValue;
-use worker::{Env, Method, Request, RequestInit, Response, Result};
+use worker::{Context, Env, Method, Request, RequestInit, Response, Result};
 
-use crate::support::{MAILBOX_BINDING, bearer, domains, json_error, random_hex, token};
+use crate::{
+    admin,
+    support::{
+        MAILBOX_BINDING, MAX_CREATE_BODY_SIZE, bearer, domains, json_error, random_hex, token,
+    },
+};
 
 fn random_mailbox_name() -> String {
     format!("mail-{}", random_hex(4))
 }
 
-pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
+pub(crate) async fn handle_fetch(req: Request, env: &Env, ctx: &Context) -> Result<Response> {
     let path = req.path();
     let message_prefix = format!("{PATH_MESSAGES}/");
 
@@ -28,7 +33,8 @@ pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
             Some(domains) => Response::from_json(&domains),
             None => json_error("MAILBOX_DOMAINS is not configured", 500),
         },
-        (Method::Post, PATH_MAILBOX) => create_mailbox(req, env).await,
+        (Method::Get, "/admin/stats") => admin::handle_fetch(req, env).await,
+        (Method::Post, PATH_MAILBOX) => create_mailbox(req, env, ctx).await,
         (Method::Get, PATH_MESSAGES) => forward_authed(req, env, "messages", Method::Get).await,
         (Method::Get, path) if path.starts_with(&message_prefix) => {
             let id = &path[message_prefix.len()..];
@@ -59,7 +65,7 @@ pub(crate) async fn handle_fetch(req: Request, env: &Env) -> Result<Response> {
     }
 }
 
-async fn create_mailbox(mut req: Request, env: &Env) -> Result<Response> {
+async fn create_mailbox(mut req: Request, env: &Env, ctx: &Context) -> Result<Response> {
     let body = match create_mailbox_body(&mut req).await? {
         Ok(body) => body,
         Err(response) => return Ok(response),
@@ -95,6 +101,13 @@ async fn create_mailbox(mut req: Request, env: &Env) -> Result<Response> {
         return Ok(create_response);
     }
 
+    let mut create_response = create_response;
+    if create_response.json::<CreateMailboxResult>().await?.created {
+        let env = env.clone();
+        ctx.wait_until(async move {
+            let _ = admin::record_mailbox_created(&env).await;
+        });
+    }
     Response::from_json(&MailboxCreated {
         address: format!("{address}@{domain}"),
         token,
@@ -102,10 +115,26 @@ async fn create_mailbox(mut req: Request, env: &Env) -> Result<Response> {
     .map(|response| response.with_status(201))
 }
 
+#[derive(serde::Deserialize)]
+struct CreateMailboxResult {
+    created: bool,
+}
+
 async fn create_mailbox_body(
     req: &mut Request,
 ) -> Result<std::result::Result<CreateMailboxRequest, Response>> {
+    if req
+        .headers()
+        .get("content-length")?
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|size| size > MAX_CREATE_BODY_SIZE)
+    {
+        return Ok(Err(json_error("Request body too large", 413)?));
+    }
     let text = req.text().await?;
+    if text.len() > MAX_CREATE_BODY_SIZE {
+        return Ok(Err(json_error("Request body too large", 413)?));
+    }
     if text.trim().is_empty() {
         return Ok(Ok(CreateMailboxRequest {
             domain: None,

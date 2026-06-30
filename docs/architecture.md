@@ -22,8 +22,11 @@ Cloudflare Email Routing
   v
 Worker email handler
   |-- rejects oversized raw messages
-  |-- parses body and attachment metadata only
-  |-- delivers parsed messages to the mailbox Durable Object
+  |-- forwards raw messages to the mailbox Durable Object
+
+Durable Object MAILBOX
+  |-- ignores delivery when the mailbox token does not exist
+  |-- parses body and attachment metadata for known mailboxes
 
 CLI / MCP
   |

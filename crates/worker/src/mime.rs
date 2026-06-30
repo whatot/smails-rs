@@ -1,65 +1,56 @@
 use mail_parser::{Message, MessageParser, MessagePart, MimeHeaders};
 use smails_core::{Attachment, preview_text};
 
-pub(crate) struct DisplayFields {
+pub(crate) struct ParsedMail {
     pub(crate) from_name: String,
     pub(crate) subject: String,
     pub(crate) preview: String,
-}
-
-#[derive(Default)]
-pub(crate) struct ParsedMail {
     pub(crate) html: Option<String>,
     pub(crate) text: Option<String>,
     pub(crate) attachments: Vec<Attachment>,
 }
 
-pub(crate) fn parse_mail(raw: &[u8]) -> ParsedMail {
-    MessageParser::default()
-        .parse(raw)
-        .map(|message| ParsedMail {
-            html: first_body(message.html_bodies()),
-            text: first_body(message.text_bodies()),
-            attachments: attachments(&message),
-        })
-        .unwrap_or_default()
-}
-
-pub(crate) fn display_fields(raw: &[u8], fallback_from: &str) -> DisplayFields {
-    let message = MessageParser::default().parse(raw);
+pub(crate) fn parse_mail(raw: &[u8], fallback_from: &str) -> ParsedMail {
+    let Some(message) = MessageParser::default().parse(raw) else {
+        return empty_mail(fallback_from);
+    };
     let from_name = message
-        .as_ref()
-        .and_then(|message| message.from())
+        .from()
         .and_then(|from| from.first())
         .and_then(|from| from.name.as_deref())
         .filter(|name| !name.trim().is_empty())
         .map(str::to_owned)
         .unwrap_or_else(|| fallback_from.to_owned());
     let subject = message
-        .as_ref()
-        .and_then(|message| message.subject())
+        .subject()
         .filter(|subject| !subject.is_empty())
         .unwrap_or("(no subject)")
         .to_owned();
-    let parts = message
-        .as_ref()
-        .map(|message| ParsedMail {
-            html: first_body(message.html_bodies()),
-            text: first_body(message.text_bodies()),
-            attachments: Vec::new(),
-        })
-        .unwrap_or_default();
-    let preview = parts
-        .text
+    let html = first_body(message.html_bodies());
+    let text = first_body(message.text_bodies());
+    let preview = text
         .as_deref()
-        .or(parts.html.as_deref())
+        .or(html.as_deref())
         .map(preview_text)
         .unwrap_or_default();
-
-    DisplayFields {
+    ParsedMail {
         from_name,
         subject,
         preview,
+        html,
+        text,
+        attachments: attachments(&message),
+    }
+}
+
+fn empty_mail(fallback_from: &str) -> ParsedMail {
+    ParsedMail {
+        from_name: fallback_from.to_owned(),
+        subject: "(no subject)".to_owned(),
+        preview: String::new(),
+        html: None,
+        text: None,
+        attachments: Vec::new(),
     }
 }
 
@@ -112,12 +103,11 @@ mod tests {
     fn parses_simple_message_display_and_body() {
         let raw =
             b"From: Alice <a@example.com>\r\nSubject: Hi\r\nContent-Type: text/plain\r\n\r\nhello";
-        let fields = display_fields(raw, "fallback@example.com");
-        let parsed = parse_mail(raw);
+        let parsed = parse_mail(raw, "fallback@example.com");
 
-        assert_eq!(fields.from_name, "Alice");
-        assert_eq!(fields.subject, "Hi");
-        assert_eq!(fields.preview, "hello");
+        assert_eq!(parsed.from_name, "Alice");
+        assert_eq!(parsed.subject, "Hi");
+        assert_eq!(parsed.preview, "hello");
         assert_eq!(parsed.text.as_deref(), Some("hello"));
     }
 
@@ -140,8 +130,10 @@ mod tests {
             "aGVsbG8=\r\n",
             "--mixed--\r\n"
         );
-        let parsed = parse_mail(raw.as_bytes());
+        let parsed = parse_mail(raw.as_bytes(), "fallback@example.com");
 
+        assert_eq!(parsed.from_name, "Alice");
+        assert_eq!(parsed.subject, "Files");
         assert_eq!(parsed.text.as_deref(), Some("plain"));
         assert_eq!(parsed.html.as_deref(), Some("<b>html</b>"));
         assert_eq!(parsed.attachments.len(), 1);

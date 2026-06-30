@@ -10,6 +10,7 @@ Original TypeScript project: https://github.com/pexni/smails
 - [Architecture](docs/architecture.md)
 - [API and native clients](docs/api.md)
 - [Deployment](docs/deployment.md)
+- [Operations](docs/operations.md)
 
 ## Local Development
 

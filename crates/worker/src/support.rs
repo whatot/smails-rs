@@ -3,9 +3,13 @@ use wasm_bindgen::prelude::*;
 use worker::{Env, Request, Response, Result};
 
 pub(crate) const MAILBOX_BINDING: &str = "MAILBOX";
+pub(crate) const ADMIN_BINDING: &str = "ADMIN";
+pub(crate) const ADMIN_TOKEN: &str = "ADMIN_TOKEN";
 pub(crate) const EXPIRY_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 pub(crate) const ONE_DAY_MS: i64 = 24 * 60 * 60 * 1000;
-pub(crate) const MAX_RAW_SIZE: f64 = 1.4 * 1024.0 * 1024.0;
+pub(crate) const MAX_RAW_SIZE: f64 = 512.0 * 1024.0;
+pub(crate) const MAX_CREATE_BODY_SIZE: usize = 4096;
+pub(crate) const MAX_MESSAGES_PER_MAILBOX: i64 = 100;
 
 #[wasm_bindgen]
 extern "C" {
@@ -119,5 +123,10 @@ mod tests {
             vec!["example.com", "alt.example.com"]
         );
         assert!(parse_domains(" , ").is_none());
+    }
+
+    #[test]
+    fn constant_time_compare_requires_equal_lengths() {
+        assert!(!constant_time_eq("abc", "abcd"));
     }
 }

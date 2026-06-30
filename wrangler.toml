@@ -4,6 +4,9 @@ compatibility_date = "2026-06-29"
 observability = { enabled = true }
 upload_source_maps = true
 
+[limits]
+cpu_ms = 100
+
 [build]
 command = "cargo build -p smails-frontend --target wasm32-unknown-unknown --release && wasm-bindgen target/wasm32-unknown-unknown/release/smails_frontend.wasm --target web --out-dir crates/frontend/static/pkg --out-name smails_frontend && WASM_BINDGEN_BIN=wasm-bindgen worker-build --release crates/worker"
 
@@ -11,7 +14,7 @@ command = "cargo build -p smails-frontend --target wasm32-unknown-unknown --rele
 directory = "crates/frontend/static"
 not_found_handling = "single-page-application"
 html_handling = "drop-trailing-slash"
-run_worker_first = ["/api/*", "/health"]
+run_worker_first = ["/api/*", "/admin/*", "/health"]
 
 [vars]
 # Local/dev mailbox domains. Set production domains in Cloudflare or an env-specific Wrangler config.
@@ -22,9 +25,14 @@ binding = "CF_VERSION"
 
 [durable_objects]
 bindings = [
-  { name = "MAILBOX", class_name = "Mailbox" }
+  { name = "MAILBOX", class_name = "Mailbox" },
+  { name = "ADMIN", class_name = "Admin" }
 ]
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Mailbox"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Admin"]

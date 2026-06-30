@@ -7,8 +7,12 @@ use worker::{
 
 use crate::{
     Mailbox,
-    schema::init_schema,
-    support::{EXPIRY_MS, ONE_DAY_MS, constant_time_eq, json_error, random_hex, token},
+    mailbox_schema::init_schema,
+    mime::parse_mail,
+    support::{
+        EXPIRY_MS, MAX_MESSAGES_PER_MAILBOX, ONE_DAY_MS, constant_time_eq, json_error, random_hex,
+        token,
+    },
 };
 
 #[derive(Deserialize)]
@@ -22,6 +26,16 @@ struct StoredMessage {
     attachments: String,
     received_at: i64,
     read: i64,
+}
+
+#[derive(serde::Serialize)]
+struct DeliverResult {
+    stored: bool,
+}
+
+#[derive(serde::Serialize)]
+struct CreateResult {
+    created: bool,
 }
 
 impl Mailbox {
@@ -56,12 +70,11 @@ impl DurableObject for Mailbox {
     }
 
     async fn fetch(&self, req: Request) -> Result<Response> {
-        if let Some(response) = self.ensure_schema()? {
-            return Ok(response);
-        }
-
         let path = req.path();
         let message_prefix = "/messages/";
+        if req.method() == Method::Post && path == "/deliver" {
+            return self.deliver(req).await;
+        }
 
         match (req.method(), path.as_str()) {
             (Method::Post, "/create") => self.create(req).await,
@@ -72,7 +85,6 @@ impl DurableObject for Mailbox {
             (Method::Delete, path) if path.starts_with(message_prefix) => {
                 self.delete(req, &path[message_prefix.len()..]).await
             }
-            (Method::Post, "/deliver") => self.deliver(req).await,
             (Method::Get, "/api/mailbox/connect") => self.connect(req).await,
             _ => json_error("Not found", 404),
         }
@@ -128,6 +140,9 @@ impl Mailbox {
     }
 
     async fn create(&self, mut req: Request) -> Result<Response> {
+        if let Some(response) = self.ensure_schema()? {
+            return Ok(response);
+        }
         let new_token = req.text().await?;
         let existing = self.state.storage().get::<String>("token").await?;
         if existing
@@ -136,16 +151,20 @@ impl Mailbox {
         {
             return json_error("Mailbox already exists", 409);
         }
+        let created = existing.is_none();
         self.state.storage().put("token", new_token).await?;
         self.touch().await?;
-        Response::from_json(&OkJson { ok: true })
+        Response::from_json(&CreateResult { created })
     }
 
     async fn list(&self, req: Request) -> Result<Response> {
         if !self.auth(&req).await? {
             return json_error("Unauthorized", 401);
         }
-        self.touch().await?;
+        if let Some(response) = self.ensure_schema()? {
+            return Ok(response);
+        }
+        self.refresh_if_stale().await?;
         let rows = self
             .state
             .storage()
@@ -165,11 +184,14 @@ impl Mailbox {
         if !self.auth(&req).await? {
             return json_error("Unauthorized", 401);
         }
-        self.touch().await?;
-        self.state
-            .storage()
-            .sql()
-            .exec("UPDATE messages SET read = 1 WHERE id = ?", vec![id.into()])?;
+        if let Some(response) = self.ensure_schema()? {
+            return Ok(response);
+        }
+        self.refresh_if_stale().await?;
+        self.state.storage().sql().exec(
+            "UPDATE messages SET read = 1 WHERE id = ? AND read = 0",
+            vec![id.into()],
+        )?;
         let rows = self
             .state
             .storage()
@@ -197,7 +219,10 @@ impl Mailbox {
         if !self.auth(&req).await? {
             return json_error("Unauthorized", 401);
         }
-        self.touch().await?;
+        if let Some(response) = self.ensure_schema()? {
+            return Ok(response);
+        }
+        self.refresh_if_stale().await?;
         self.state
             .storage()
             .sql()
@@ -206,11 +231,26 @@ impl Mailbox {
     }
 
     async fn deliver(&self, mut req: Request) -> Result<Response> {
-        let body = req.json::<DeliverMessage>().await?;
-        self.touch().await?;
         if self.state.storage().get::<String>("token").await?.is_none() {
-            return Response::from_json(&OkJson { ok: true });
+            return Response::from_json(&DeliverResult { stored: false });
         }
+        if let Some(response) = self.ensure_schema()? {
+            return Ok(response);
+        }
+        self.refresh_if_stale().await?;
+
+        let from = req.headers().get("x-smails-from")?.unwrap_or_default();
+        let raw = req.bytes().await?;
+        let parsed = parse_mail(&raw, &from);
+        let body = DeliverMessage {
+            from_addr: from,
+            from_name: parsed.from_name,
+            subject: parsed.subject,
+            preview: parsed.preview,
+            html: parsed.html,
+            text: parsed.text,
+            attachments: parsed.attachments,
+        };
 
         let received_at = worker::Date::now().as_millis() as i64;
         let id = format!("msg-{}", random_hex(16));
@@ -230,13 +270,20 @@ impl Mailbox {
                 received_at.into(),
             ],
         )?;
+        self.state.storage().sql().exec(
+            "DELETE FROM messages
+             WHERE id NOT IN (
+                SELECT id FROM messages ORDER BY received_at DESC LIMIT ?
+             )",
+            vec![MAX_MESSAGES_PER_MAILBOX.into()],
+        )?;
 
         let event = serde_json::json!({ "type": "new_message", "id": id }).to_string();
         for ws in self.state.get_websockets() {
             ws.send_with_str(&event)?;
         }
 
-        Response::from_json(&OkJson { ok: true })
+        Response::from_json(&DeliverResult { stored: true })
     }
 
     async fn connect(&self, req: Request) -> Result<Response> {
@@ -245,7 +292,7 @@ impl Mailbox {
         }
         let pair = WebSocketPair::new()?;
         self.state.accept_web_socket(&pair.server);
-        self.touch().await?;
+        self.refresh_if_stale().await?;
         Response::from_websocket(pair.client)
     }
 }
